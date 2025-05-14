@@ -1,6 +1,9 @@
-import requests
+import sys
 
-from app import FIREFLY_BASE_URL, FIREFLY_API_KEY
+import requests
+from dns.immutable import constify
+
+from app import FIREFLY_BASE_URL, FIREFLY_API_KEY, FIREFLY_DEFAULT_ACCOUNT_ID
 from app.firefly.models.parsed_transaction_message import ParsedTransactionMessage
 
 
@@ -82,18 +85,47 @@ class FireflyApi:
         """
         return self.get_json(f"/accounts/{account_id}/transactions")
 
-    def create_transaction(self, parsed_transaction: ParsedTransactionMessage):
-        destination_account = parsed_transaction.get_first_similar_account_name()
-
-        transaction_data = {
-            'type':  'withdrawal',
-            'date':  parsed_transaction.getDate().toIso8601String(),
-            'amount':  parsed_transaction.amount,
-            'description':  parsed_transaction.getPossibleTransactionDescription(),
-            'source_id':  config('firefly-iii.default_account_id'),
-            'category_id':  parsed_transaction.getFirstPossibleCategoryId(),
-            'tags':  ['powered-by-groq'],
-            'notes':  parsed_transaction.raw_transaction_message ? "Raw transaction message: $parsed_transaction.raw_transaction_message": null,
+    def accounts(self, account_type : str, get_all: bool = False):
+        params = {
+            'type': account_type,
+            'limit': 20
         }
 
-        pass
+        response = self.get_json(endpoint='accounts', params=params)
+
+        if not get_all:
+            try:
+                return response['data']
+            except KeyError:
+                return []
+
+        accounts = response['data']
+        current_page = response['meta']['pagination']['current_page'] or 1
+        total_pages = response['meta']['pagination']['total_pages'] or 1
+
+        while current_page < total_pages:
+            current_page += 1
+            params['page'] = current_page
+
+            response = self.get_json(endpoint='accounts', params=params)
+            accounts += response['data']
+
+        return accounts
+
+
+    # def create_transaction(self, parsed_transaction: ParsedTransactionMessage):
+    #     destination_account = parsed_transaction.get_first_similar_account_name()
+    #
+    #     transaction_data = {
+    #         'type':  'withdrawal',
+    #         'date':  parsed_transaction.getDate().toIsoString(),
+    #         'amount':  parsed_transaction.amount,
+    #         'description':  parsed_transaction.getPossibleTransactionDescription(),
+    #         'source_id':  FIREFLY_DEFAULT_ACCOUNT_ID,
+    #         'category_id':  parsed_transaction.getFirstPossibleCategoryId(),
+    #         'tags':  ['powered-by-groq'],
+    #         'notes':  parsed_transaction.raw_transaction_message ?
+    #     'Raw transaction message: $parsed_transaction.raw_transaction_message': null,
+    #     }
+    #
+    #     pass

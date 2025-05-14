@@ -40,7 +40,7 @@ MONGO_DB_NAME = config.get('mongo', 'db_name', fallback='firefly_sms_parser')
 MONGO_DB_AUTH_SOURCE = config.get('mongo', 'auth_source')
 
 # Firefly Config
-FIREFLY_BASE_URL = config.get('firefly', 'base_url')
+FIREFLY_BASE_URL = config.get('firefly', 'url')
 FIREFLY_API_KEY = config.get('firefly', 'api_key')
 FIREFLY_DEFAULT_ACCOUNT_ID = config.getint('firefly', 'default_account_id')
 
