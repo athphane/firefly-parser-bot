@@ -1,0 +1,11 @@
+.idea
+.venv
+venv
+config.ini
+*.session
+*.cache
+*.session-journal
+downloads
+down
+app/**/__pycache__/
+.syncedlyrics

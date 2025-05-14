@@ -1,0 +1,17 @@
+[pyrogram]
+api_id =
+api_hash =
+bot_token =
+admins =
+
+[mongo]
+url = localhost:27017
+username = root
+password = example
+db_name=firefly_sms_parser
+auth_source =
+
+[firefly]
+url = https://firefly.your-domain.com
+api_key = your_api_key
+default_account_id = 1
