@@ -1,10 +1,75 @@
 from pyrogram import filters
 from pyrogram.enums import ChatAction
-from pyrogram.types import Message
+from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 
 from app import FireflyParserBot, TELEGRAM_ADMINS
 from app.database.vendorsdb import VendorsDB
 from app.firefly.firefly import FireflyApi
+
+VENDORS_PER_PAGE = 10
+
+
+@FireflyParserBot.on_message(filters.user(TELEGRAM_ADMINS) & filters.command(["vendors"]), group=1)
+async def list_vendors(_, message: Message):
+    await message.reply_chat_action(ChatAction.TYPING)
+    # Extract query from the command (everything after /vendors)
+    query = message.text.split(maxsplit=1)[1] if len(message.text.split(maxsplit=1)) > 1 else ""
+    page = 1
+    await send_vendors_list(message, page, query)
+
+
+async def send_vendors_list(message_or_callback, page: int, query: str):
+    db = VendorsDB()
+    filter_ = {}
+    if query:
+        # Case-insensitive search in name or aliases
+        filter_ = {
+            "$or": [
+                {"name": {"$regex": query, "$options": "i"}},
+                {"aliases": {"$regex": query, "$options": "i"}}
+            ]
+        }
+    total_vendors = db.vendors.count_documents(filter_)
+    vendors_cursor = db.vendors.find(filter_).sort("name", 1).skip((page - 1) * VENDORS_PER_PAGE).limit(VENDORS_PER_PAGE)
+    vendors = list(vendors_cursor)
+
+    if not vendors:
+        text = f"No vendors found for query: '{query}'" if query else "No vendors found."
+    else:
+        text = f"Vendors (Page {page})"
+        if query:
+            text += f" | Query: '{query}'"
+        text += ":\n"
+        for idx, vendor in enumerate(vendors, start=1 + (page - 1) * VENDORS_PER_PAGE):
+            text += f"{idx}. {vendor.get('name', 'Unnamed')}\n"
+
+    # Pagination buttons
+    buttons = []
+    max_page = (total_vendors + VENDORS_PER_PAGE - 1) // VENDORS_PER_PAGE
+    nav_buttons = []
+    if page > 1:
+        nav_buttons.append(InlineKeyboardButton("⬅️ Prev", callback_data=f"vendors_page:{page - 1}:{query}"))
+    if page < max_page:
+        nav_buttons.append(InlineKeyboardButton("Next ➡️", callback_data=f"vendors_page:{page + 1}:{query}"))
+    if nav_buttons:
+        buttons.append(nav_buttons)
+
+    markup = InlineKeyboardMarkup(buttons) if buttons else None
+
+    if isinstance(message_or_callback, Message):
+        await message_or_callback.reply(text, reply_markup=markup)
+    else:
+        await message_or_callback.edit_message_text(text, reply_markup=markup)
+
+
+@FireflyParserBot.on_callback_query(filters.regex(r"^vendors_page:(\d+):(.*)$"))
+async def vendors_page_callback(_, callback_query: CallbackQuery):
+    # The query may be empty, so use maxsplit=2 and join back if needed
+    parts = callback_query.data.split(":", 2)
+    page = int(parts[1])
+    query = parts[2] if len(parts) > 2 else ""
+    await send_vendors_list(callback_query, page, query)
+    await callback_query.answer()
 
 
 @FireflyParserBot.on_message(filters.user(TELEGRAM_ADMINS) & filters.command(["syncvendors"]), group=1)
