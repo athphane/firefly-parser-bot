@@ -58,3 +58,30 @@ class VendorsDB:
             "firefly_account_id": account_id
         })
 
+    def vendor_has_alias(self, vendor_name: str, alias: str) -> bool:
+        """
+        Checks if the vendor with the given name already has the specified alias.
+        """
+        vendor = self.vendors.find_one(
+            {"name": vendor_name, "aliases": alias}
+        )
+        return vendor is not None
+
+    def count_vendors(self) -> int:
+        """
+        Returns the total number of vendors in the database.
+        """
+        return self.vendors.count_documents({})
+
+    def count_aliases(self) -> int:
+        """
+        Returns the total number of aliases across all vendors in the database.
+        """
+        pipeline = [
+            {"$project": {"aliases": 1}},
+            {"$unwind": "$aliases"},
+            {"$group": {"_id": None, "count": {"$sum": 1}}}
+        ]
+        result = list(self.vendors.aggregate(pipeline))
+        return result[0]["count"] if result else 0
+

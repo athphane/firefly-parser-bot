@@ -14,43 +14,62 @@ async def start_command(_, message: Message):
 
 @FireflyParserBot.on_message(filters.user(TELEGRAM_ADMINS) & filters.command(["syncvendors"]), group=1)
 async def sync_vendors(_, message: Message):
-    await message.reply("I am going to start syncing vendors from your Firefly instance to myself.")
-
+    await message.reply("Syncing vendors. Please wait...")
     await message.reply_chat_action(ChatAction.TYPING)
 
-    acounts = FireflyApi().accounts('expense', True)
+    try:
+        accounts = FireflyApi().accounts('expense', True)
+    except Exception as e:
+        await message.reply(f"Failed to fetch accounts from Firefly: {e}")
+        return
 
-    for account in acounts:
+    new_vendors = 0
+    new_aliases = 0
+    skipped = 0
+
+    for account in accounts:
         account_id = account['id']
         attributes = account['attributes']
-        notes: str = attributes['notes']
+        notes: str = attributes.get('notes', '')
 
-        if ('***'
-            'NOT A VENDOR'
-            '***') in notes:
-            print(f"Skipping vendor {account['attributes']['name']}")
+        if (notes is not None) and ('***NOT A VENDOR***' in notes):
+            print(f"Skipping vendor {attributes.get('name', account_id)}")
+            skipped += 1
             continue
 
         vendor = VendorsDB().find_vendor_by_firefly_account_id(account_id)
-
         if not vendor:
             vendor = VendorsDB().add_vendor(
-                name=attributes['name'],
-                description=attributes['description'],
+                name=attributes.get('name', ''),
+                description=attributes.get('description', ''),
                 firefly_account_id=account_id
             )
-            print(f"New vendor added: {attributes['name']}")
+            print(f"New vendor added: {attributes.get('name', '')}")
+            new_vendors += 1
 
         aliases = extract_aliases(notes)
-
         for alias in aliases:
-            VendorsDB().add_alias_to_vendor(
-                vendor_name=attributes['name'],
-                alias=alias
-            )
-            print(f"New alias added: {alias} to vendor {attributes['name']}")
+            # Avoid duplicate aliases
+            if not VendorsDB().vendor_has_alias(attributes.get('name', ''), alias):
+                VendorsDB().add_alias_to_vendor(
+                    vendor_name=attributes.get('name', ''),
+                    alias=alias
+                )
+                print(f"New alias added: {alias} to vendor {attributes.get('name', '')}")
+                new_aliases += 1
 
-    await message.reply('Yo im done')
+    # Get total vendors and aliases in the DB
+    total_vendors = VendorsDB().count_vendors()
+    total_aliases = VendorsDB().count_aliases()
+
+    await message.reply(
+        f"Sync complete!\n"
+        f"New vendors added: {new_vendors}\n"
+        f"New aliases added: {new_aliases}\n"
+        f"Vendors skipped: {skipped}\n\n"
+        f"Total vendors in DB: {total_vendors}\n"
+        f"Total aliases in DB: {total_aliases}"
+    )
 
 
 def extract_aliases(notes: str) -> list[str]:
@@ -77,6 +96,6 @@ def extract_aliases(notes: str) -> list[str]:
         return []
 
     aliases = [alias.strip() for alias in aliases_block.split("\n") if alias.strip()]  # List comprehension for
-    # filtering
 
     return aliases
+
