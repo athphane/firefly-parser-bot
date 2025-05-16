@@ -10,13 +10,14 @@ from app.firefly.firefly import FireflyApi
 VENDORS_PER_PAGE = 10
 
 
-@FireflyParserBot.on_message(filters.user(TELEGRAM_ADMINS) & filters.command(["vendors"]), group=1)
+@FireflyParserBot.on_message(filters.private & filters.user(TELEGRAM_ADMINS) & filters.command(["vendors"]), group=1)
 async def list_vendors(_, message: Message):
     await message.reply_chat_action(ChatAction.TYPING)
     # Extract query from the command (everything after /vendors)
     query = message.text.split(maxsplit=1)[1] if len(message.text.split(maxsplit=1)) > 1 else ""
     page = 1
     await send_vendors_list(message, page, query)
+    await message.stop_propagation()
 
 
 async def send_vendors_list(message_or_callback, page: int, query: str):
@@ -90,7 +91,7 @@ async def vendors_page_callback(_, callback_query: CallbackQuery):
     await callback_query.answer()
 
 
-@FireflyParserBot.on_message(filters.user(TELEGRAM_ADMINS) & filters.command(["syncvendors"]), group=1)
+@FireflyParserBot.on_message(filters.private & filters.user(TELEGRAM_ADMINS) & filters.command(["syncvendors"]), group=1)
 async def sync_vendors(_, message: Message):
     await message.reply("Syncing vendors. Please wait...")
     await message.reply_chat_action(ChatAction.TYPING)
@@ -181,7 +182,6 @@ def extract_aliases(notes: str) -> list[str]:
 @FireflyParserBot.on_callback_query(filters.regex(r"^view_vendor:(.+)$"))
 async def view_vendor_callback(_, callback_query: CallbackQuery):
     vendor_id = callback_query.data.split(":", 1)[1]
-    print(f"Vendor ID: {vendor_id}")
     db = VendorsDB()
     vendor = db.vendors.find_one({"_id": ObjectId(vendor_id)})
 
@@ -265,7 +265,7 @@ async def add_alias_callback(_, callback_query: CallbackQuery):
     await callback_query.answer()
 
 
-@FireflyParserBot.on_message(filters.user(TELEGRAM_ADMINS), group=10)
+@FireflyParserBot.on_message(filters.private & filters.user(TELEGRAM_ADMINS), group=10)
 async def handle_add_alias_reply(_, message: Message):
     ctx = getattr(FireflyParserBot, "_add_alias_context", None)
     if not ctx or ctx["user_id"] != message.from_user.id:
@@ -358,7 +358,7 @@ async def edit_vendor_name_callback(_, callback_query: CallbackQuery):
     await callback_query.answer()
 
 
-@FireflyParserBot.on_message(filters.user(TELEGRAM_ADMINS), group=11)
+@FireflyParserBot.on_message(filters.private & filters.user(TELEGRAM_ADMINS), group=11)
 async def handle_edit_vendor_name_reply(_, message: Message):
     ctx = getattr(FireflyParserBot, "_edit_vendor_name_context", None)
     if not ctx or ctx["user_id"] != message.from_user.id:

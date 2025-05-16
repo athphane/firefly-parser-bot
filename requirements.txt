@@ -2,3 +2,4 @@ pyrofork
 tgcrypto-pyrofork
 pymongo
 requests
+groq

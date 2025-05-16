@@ -44,5 +44,7 @@ FIREFLY_BASE_URL = config.get('firefly', 'url')
 FIREFLY_API_KEY = config.get('firefly', 'api_key')
 FIREFLY_DEFAULT_ACCOUNT_ID = config.getint('firefly', 'default_account_id')
 
+GROQ_API_KEY = config.get('ai', 'groq_api_key')
+
 
 FireflyParserBot = FireflyParserBot(__version__, api_id=TELEGRAM_API_ID, api_hash=TELEGRAM_API_HASH, bot_token=TELEGRAM_BOT_TOKEN)
