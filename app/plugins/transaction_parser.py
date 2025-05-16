@@ -1,3 +1,5 @@
+import json
+
 from groq import Groq
 from groq.types.chat import ChatCompletionSystemMessageParam, ChatCompletionUserMessageParam
 from groq.types.chat.completion_create_params import ResponseFormat
@@ -29,7 +31,18 @@ async def incoming_transaction_message(_, message: Message):
 
     ai_response = completion.choices[0].message.content
 
-    await message.reply(ai_response)
+    json_decoded = json.loads(ai_response)
+
+    # check if all the keys are not None
+    if json_decoded.get('card') is None or json_decoded.get('date') is None or json_decoded.get('time') is None \
+            or json_decoded.get('currency') is None or json_decoded.get('amount') is None \
+            or json_decoded.get('location') is None or json_decoded.get('approval_code') is None \
+            or json_decoded.get('reference_no') is None:
+        await message.reply("I could not parse the transaction. Please try again.")
+        return
+
+    await message.reply(json_decoded)
+
 
 
 def get_system_message_for_text():
