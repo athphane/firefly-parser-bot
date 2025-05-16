@@ -43,6 +43,44 @@ class FireflyApi:
         else:
             raise Exception(f"Error: {response.status_code} - {response.text}")
 
+    def post_json(self, endpoint: str, payload: dict):
+        """
+        Send a POST request to the Firefly API.
+        :param endpoint: API endpoint
+        :param payload: JSON payload
+        :return: Response JSON or raises an exception on failure.
+        """
+        url = self.construct_url(endpoint)
+        headers = {
+            'Authorization': f'Bearer {self.api_key}',
+            'Content-Type': 'application/json'
+        }
+        response = requests.post(url, headers=headers, json=payload)
+
+        if response.status_code in (200, 201):
+            return response.json()
+        else:
+            raise Exception(f"POST request failed: {response.status_code} - {response.text}")
+
+    def put_json(self, endpoint: str, payload: dict):
+        """
+        Send a PUT request to the Firefly API.
+        :param endpoint: API endpoint
+        :param payload: JSON payload
+        :return: Response JSON or raises an exception on failure.
+        """
+        url = self.construct_url(endpoint)
+        headers = {
+            'Authorization': f'Bearer {self.api_key}',
+            'Content-Type': 'application/json'
+        }
+        response = requests.put(url, headers=headers, json=payload)
+
+        if response.status_code in (200, 204):
+            return response.json() if response.status_code == 200 else {"message": "Request successful"}
+        else:
+            raise Exception(f"PUT request failed: {response.status_code} - {response.text}")
+
     def about(self):
         """
         Get information about the Firefly API
@@ -112,6 +150,37 @@ class FireflyApi:
 
         return accounts
 
+    def update_account_name(self, account_id: int, new_name: str):
+        """
+        Update the name of an account in Firefly.
+        :param account_id: The Firefly account ID.
+        :param new_name: The new name for the account.
+        :return: Response JSON or raises an exception on failure.
+        """
+        payload = {"name": new_name}
+        return self.put_json(f"accounts/{account_id}", payload)
+
+    def update_account_aliases(self, account_id: int, aliases: list[str]):
+        """
+        Update the aliases of an account in Firefly.
+        :param account_id: The Firefly account ID.
+        :param aliases: The list of aliases to set for the account.
+        :return: Response JSON or raises an exception on failure.
+        """
+        payload = {"notes": self._generate_alias_notes(aliases)}
+        return self.put_json(f"accounts/{account_id}", payload)
+
+    @staticmethod
+    def _generate_alias_notes(aliases: list[str]) -> str:
+        """
+        Generate the notes field content for Firefly, embedding aliases.
+        :param aliases: List of aliases.
+        :return: A formatted string containing aliases.
+        """
+        if not aliases:
+            return ""
+        aliases_block = "\n".join(aliases)
+        return f"*START:ALIASES*\n{aliases_block}\n*END:ALIASES*"
 
     # def create_transaction(self, parsed_transaction: ParsedTransactionMessage):
     #     destination_account = parsed_transaction.get_first_similar_account_name()

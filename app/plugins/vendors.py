@@ -219,8 +219,27 @@ async def view_vendor_callback(_, callback_query: CallbackQuery):
 async def delete_alias_callback(_, callback_query: CallbackQuery):
     vendor_id, alias = callback_query.data.split(":", 2)[1:]
     db = VendorsDB()
+    vendor = db.vendors.find_one({"_id": ObjectId(vendor_id)})
+
+    if not vendor:
+        await callback_query.answer("Vendor not found.", show_alert=True)
+        return
+
     db.vendors.update_one({"_id": ObjectId(vendor_id)}, {"$pull": {"aliases": alias}})
+    firefly_id = vendor.get("firefly_account_id")
+
+    # Sync aliases with Firefly
+    if firefly_id:
+        updated_aliases = vendor.get("aliases", [])
+        updated_aliases.remove(alias)
+        try:
+            FireflyApi().update_account_aliases(firefly_id, updated_aliases)
+        except Exception as e:
+            await callback_query.answer(f"Alias deleted locally, but failed to sync with Firefly: {e}", show_alert=True)
+            return
+
     await callback_query.answer(f"Alias '{alias}' deleted.")
+
     # Refresh alias list
     await _manage_aliases_callback(callback_query, vendor_id)
 
@@ -259,6 +278,18 @@ async def handle_add_alias_reply(_, message: Message):
     alias = message.text.strip()
     if alias and not db.vendor_has_alias(vendor_name, alias):
         db.add_alias_to_vendor(vendor_name, alias)
+        firefly_id = vendor.get("firefly_account_id")
+
+        # Sync aliases with Firefly
+        if firefly_id:
+            updated_aliases = vendor.get("aliases", [])
+            updated_aliases.append(alias)
+            try:
+                FireflyApi().update_account_aliases(firefly_id, updated_aliases)
+            except Exception as e:
+                await message.reply(f"Alias added locally, but failed to sync with Firefly: {e}")
+                return
+
         await message.reply(f"Alias '<code>{alias}</code>' added to <b>{vendor_name}</b>.")
     else:
         await message.reply("Alias is empty or already exists.")
@@ -302,6 +333,7 @@ async def _manage_aliases_callback(callback_query: CallbackQuery, vendor_id: str
     await callback_query.message.reply(text, reply_markup=markup)
     await callback_query.answer()
 
+
 @FireflyParserBot.on_callback_query(filters.regex(r"^edit_vendor_name:(.+)$"))
 async def edit_vendor_name_callback(_, callback_query: CallbackQuery):
     vendor_id = callback_query.data.split(":", 1)[1]
@@ -326,7 +358,7 @@ async def edit_vendor_name_callback(_, callback_query: CallbackQuery):
     await callback_query.answer()
 
 
-@FireflyParserBot.on_message(filters.user(TELEGRAM_ADMINS), group=10)
+@FireflyParserBot.on_message(filters.user(TELEGRAM_ADMINS), group=11)
 async def handle_edit_vendor_name_reply(_, message: Message):
     ctx = getattr(FireflyParserBot, "_edit_vendor_name_context", None)
     if not ctx or ctx["user_id"] != message.from_user.id:
@@ -340,8 +372,25 @@ async def handle_edit_vendor_name_reply(_, message: Message):
 
     if new_vendor_name and not db.exists(new_vendor_name):
         db.vendors.update_one({"name": old_vendor_name}, {"$set": {"name": new_vendor_name}})
-        await message.reply(
-            f"Vendor name updated from '<code>{old_vendor_name}</code>' to '<code>{new_vendor_name}</code>'.")
+
+        # Update the name in Firefly
+        firefly_id = vendor.get("firefly_account_id")
+        if firefly_id:
+            try:
+                FireflyApi().update_account_name(firefly_id, new_vendor_name)
+                await message.reply(
+                    f"Vendor name updated in the database and Firefly from '<code>{old_vendor_name}</code>' "
+                    f"to '<code>{new_vendor_name}</code>'."
+                )
+            except Exception as e:
+                await message.reply(
+                    f"Vendor name updated in the database, but failed to update in Firefly: {e}"
+                )
+        else:
+            await message.reply(
+                f"Vendor name updated in the database from '<code>{old_vendor_name}</code>' "
+                f"to '<code>{new_vendor_name}</code>'. Firefly ID not found, so Firefly was not updated."
+            )
     else:
         await message.reply("The new name is empty or already exists.")
     FireflyParserBot._edit_vendor_name_context = None
