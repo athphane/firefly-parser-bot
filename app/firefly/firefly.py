@@ -1,10 +1,6 @@
-import sys
-
 import requests
-from dns.immutable import constify
 
 from app import FIREFLY_BASE_URL, FIREFLY_API_KEY, FIREFLY_DEFAULT_ACCOUNT_ID
-from app.firefly.models.parsed_transaction_message import ParsedTransactionMessage
 
 
 class FireflyApi:
@@ -43,19 +39,26 @@ class FireflyApi:
         else:
             raise Exception(f"Error: {response.status_code} - {response.text}")
 
-    def post_json(self, endpoint: str, payload: dict):
+    def post_json(self, endpoint: str, payload: dict, debug: bool = False):
         """
         Send a POST request to the Firefly API.
+        :param debug:
         :param endpoint: API endpoint
         :param payload: JSON payload
         :return: Response JSON or raises an exception on failure.
         """
         url = self.construct_url(endpoint)
+
         headers = {
-            'Authorization': f'Bearer {self.api_key}',
-            'Content-Type': 'application/json'
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+            'Authorization': f'Bearer {self.api_key}'
         }
-        response = requests.post(url, headers=headers, json=payload)
+
+        response = requests.post(url, headers=headers, data=payload)
+
+        if debug:
+            return response
 
         if response.status_code in (200, 201):
             return response.json()
@@ -123,7 +126,7 @@ class FireflyApi:
         """
         return self.get_json(f"/accounts/{account_id}/transactions")
 
-    def accounts(self, account_type : str, get_all: bool = False):
+    def accounts(self, account_type: str, get_all: bool = False):
         params = {
             'type': account_type,
             'limit': 20
@@ -182,19 +185,10 @@ class FireflyApi:
         aliases_block = "\n".join(aliases)
         return f"*START:ALIASES*\n{aliases_block}\n*END:ALIASES*"
 
-    # def create_transaction(self, parsed_transaction: ParsedTransactionMessage):
-    #     destination_account = parsed_transaction.get_first_similar_account_name()
-    #
-    #     transaction_data = {
-    #         'type':  'withdrawal',
-    #         'date':  parsed_transaction.getDate().toIsoString(),
-    #         'amount':  parsed_transaction.amount,
-    #         'description':  parsed_transaction.getPossibleTransactionDescription(),
-    #         'source_id':  FIREFLY_DEFAULT_ACCOUNT_ID,
-    #         'category_id':  parsed_transaction.getFirstPossibleCategoryId(),
-    #         'tags':  ['powered-by-groq'],
-    #         'notes':  parsed_transaction.raw_transaction_message ?
-    #     'Raw transaction message: $parsed_transaction.raw_transaction_message': null,
-    #     }
-    #
-    #     pass
+    def get_transactions_from_account(self, account_id: str):
+        """
+        Get transactions from a specific account
+        :param account_id: The Firefly account ID.
+        :return: JSON data
+        """
+        return self.get_json(f"accounts/{account_id}/transactions")

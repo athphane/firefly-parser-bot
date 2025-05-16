@@ -8,6 +8,7 @@ from pyrogram.enums import ChatAction
 from pyrogram.types import Message
 
 from app import FireflyParserBot, TELEGRAM_ADMINS, GROQ_API_KEY
+from app.models.parsed_transaction_message import ParsedTransactionMessage
 
 
 @FireflyParserBot.on_message(filters.private & filters.text & filters.user(TELEGRAM_ADMINS), group=100)
@@ -43,6 +44,19 @@ async def incoming_transaction_message(_, message: Message):
 
     await message.reply(json_decoded)
 
+    parsed_transaction_message = ParsedTransactionMessage(
+        card=json_decoded['card'],
+        date=json_decoded['date'],
+        time=json_decoded['time'],
+        currency=json_decoded['currency'],
+        amount=json_decoded['amount'],
+        location=json_decoded['location'],
+        approval_code=json_decoded['approval_code'],
+        reference_no=json_decoded['reference_no'],
+        raw_transaction_message=message.text
+    )
+
+    parsed_transaction_message.create_transaction_on_firefly()
 
 
 def get_system_message_for_text():
@@ -55,5 +69,6 @@ where the transaction was taken place, and other information such as approval co
 Your task is it to extract out the important details of each transaction.
 You should output each transaction as a json object. Give the json object as as string. The json object you return MUST have the following keys: card,date,time,currency,amount,location,approval_code,reference_no.
 If you cannot find any of the above keys, please return null.
+When stripping whitespace from the values, please make sure to ONLY strip the whitespace from the start and end of the string. Any whitespace other than that is important.
 The system that uses you will parse it into json and go on from there. Please do not do any markdown formatting.
 """

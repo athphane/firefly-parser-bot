@@ -91,7 +91,8 @@ async def vendors_page_callback(_, callback_query: CallbackQuery):
     await callback_query.answer()
 
 
-@FireflyParserBot.on_message(filters.private & filters.user(TELEGRAM_ADMINS) & filters.command(["syncvendors"]), group=1)
+@FireflyParserBot.on_message(filters.private & filters.user(TELEGRAM_ADMINS) & filters.command(["syncvendors"]),
+                             group=1)
 async def sync_vendors(_, message: Message):
     await message.reply("Syncing vendors. Please wait...")
     await message.reply_chat_action(ChatAction.TYPING)
@@ -294,6 +295,7 @@ async def handle_add_alias_reply(_, message: Message):
     else:
         await message.reply("Alias is empty or already exists.")
     FireflyParserBot._add_alias_context = None
+    await message.stop_propagation()
 
 
 @FireflyParserBot.on_callback_query(filters.regex(r"^manage_aliases:(.+)$"))
@@ -394,3 +396,5 @@ async def handle_edit_vendor_name_reply(_, message: Message):
     else:
         await message.reply("The new name is empty or already exists.")
     FireflyParserBot._edit_vendor_name_context = None
+
+    await message.stop_propagation()
