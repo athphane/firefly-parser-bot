@@ -106,9 +106,16 @@ async def sync_vendors(_, message: Message):
     new_vendors = 0
     new_aliases = 0
     skipped = 0
+    deleted_vendors = 0
+    
+    # Get all Firefly account IDs from the database
+    db = VendorsDB()
+    db_account_ids = set(db.get_all_firefly_account_ids())
+    firefly_account_ids = set()
 
     for account in accounts:
         account_id = account['id']
+        firefly_account_ids.add(account_id)
         attributes = account['attributes']
         notes: str = attributes.get('notes', '')
 
@@ -117,9 +124,9 @@ async def sync_vendors(_, message: Message):
             skipped += 1
             continue
 
-        vendor = VendorsDB().find_vendor_by_firefly_account_id(account_id)
+        vendor = db.find_vendor_by_firefly_account_id(account_id)
         if not vendor:
-            vendor = VendorsDB().add_vendor(
+            vendor = db.add_vendor(
                 name=attributes.get('name', ''),
                 description=attributes.get('description', ''),
                 firefly_account_id=account_id
@@ -130,26 +137,39 @@ async def sync_vendors(_, message: Message):
         aliases = extract_aliases(notes)
         for alias in aliases:
             # Avoid duplicate aliases
-            if not VendorsDB().vendor_has_alias(attributes.get('name', ''), alias):
-                VendorsDB().add_alias_to_vendor(
+            if not db.vendor_has_alias(attributes.get('name', ''), alias):
+                db.add_alias_to_vendor(
                     vendor_name=attributes.get('name', ''),
                     alias=alias
                 )
                 print(f"New alias added: {alias} to vendor {attributes.get('name', '')}")
                 new_aliases += 1
+    
+    # Delete vendors that are in the database but not in Firefly
+    vendors_to_delete = db_account_ids - firefly_account_ids
+    for account_id in vendors_to_delete:
+        vendor = db.find_vendor_by_firefly_account_id(account_id)
+        if vendor:
+            vendor_name = vendor.get('name', 'Unknown')
+            print(f"Deleting vendor no longer in Firefly: {vendor_name}")
+            db.delete_vendor_by_firefly_account_id(account_id)
+            deleted_vendors += 1
 
     # Get total vendors and aliases in the DB
-    total_vendors = VendorsDB().count_vendors()
-    total_aliases = VendorsDB().count_aliases()
+    total_vendors = db.count_vendors()
+    total_aliases = db.count_aliases()
 
     await message.reply(
         f"Sync complete!\n"
         f"New vendors added: {new_vendors}\n"
         f"New aliases added: {new_aliases}\n"
+        f"Vendors deleted: {deleted_vendors}\n"
         f"Vendors skipped: {skipped}\n\n"
         f"Total vendors in DB: {total_vendors}\n"
         f"Total aliases in DB: {total_aliases}"
     )
+    
+    await message.stop_propagation()
 
 
 def extract_aliases(notes: str) -> list[str]:
@@ -201,7 +221,7 @@ async def view_vendor_callback(_, callback_query: CallbackQuery):
         f"Firefly ID: <code>{firefly_id}</code>\n"
         f"Aliases:\n{aliases_text}\n\n"
     )
-
+    
     buttons = [
         [
             InlineKeyboardButton("✏️ Edit Name", callback_data=f"edit_vendor_name:{vendor_id}"),
@@ -218,12 +238,24 @@ async def view_vendor_callback(_, callback_query: CallbackQuery):
 
 @FireflyParserBot.on_callback_query(filters.regex(r"^delete_alias:(.+?):(.+)$"))
 async def delete_alias_callback(_, callback_query: CallbackQuery):
-    vendor_id, alias = callback_query.data.split(":", 2)[1:]
+    vendor_id, alias_index_str = callback_query.data.split(":", 2)[1:]
     db = VendorsDB()
     vendor = db.vendors.find_one({"_id": ObjectId(vendor_id)})
 
     if not vendor:
         await callback_query.answer("Vendor not found.", show_alert=True)
+        return
+        
+    # Get aliases list and convert the index to integer
+    aliases = vendor.get("aliases", [])
+    try:
+        alias_index = int(alias_index_str)
+        if alias_index < 0 or alias_index >= len(aliases):
+            await callback_query.answer("Invalid alias index.", show_alert=True)
+            return
+        alias = aliases[alias_index]
+    except (ValueError, IndexError):
+        await callback_query.answer("Invalid alias index.", show_alert=True)
         return
 
     db.vendors.update_one({"_id": ObjectId(vendor_id)}, {"$pull": {"aliases": alias}})
@@ -231,7 +263,7 @@ async def delete_alias_callback(_, callback_query: CallbackQuery):
 
     # Sync aliases with Firefly
     if firefly_id:
-        updated_aliases = vendor.get("aliases", [])
+        updated_aliases = aliases.copy()
         updated_aliases.remove(alias)
         try:
             FireflyApi().update_account_aliases(firefly_id, updated_aliases)
@@ -326,9 +358,9 @@ async def _manage_aliases_callback(callback_query: CallbackQuery, vendor_id: str
         ]
     ]
 
-    for alias in aliases:
+    for i, alias in enumerate(aliases):
         buttons.append([
-            InlineKeyboardButton(f"❌ Delete '{alias}'", callback_data=f"delete_alias:{vendor_id}:{alias}")
+            InlineKeyboardButton(f"❌ Delete '{alias}'", callback_data=f"delete_alias:{vendor_id}:{i}")
         ])
 
     markup = InlineKeyboardMarkup(buttons)

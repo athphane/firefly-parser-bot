@@ -11,14 +11,14 @@ from app.firefly.firefly import FireflyApi
 class ParsedTransactionMessage:
     def __init__(
             self,
-            card: str,
             date: str,
             time: str,
             currency: str,
             amount: float,
             location: str,
-            approval_code: str,
             reference_no: str,
+            card: Union[None, str] = None,
+            approval_code: Union[None, str] = None,
             raw_transaction_message: Union[None, str] = None
     ):
         self.card = card
@@ -81,7 +81,7 @@ class ParsedTransactionMessage:
 
     def get_similar_account(self, default_name: bool = False):
         similar_account = VendorsDB().find_vendor_by_name_or_alias(self.location)
-
+        
         if similar_account is None:
             if default_name:
                 return self.location.title()
@@ -126,7 +126,7 @@ class ParsedTransactionMessage:
         transaction_categories = []
 
         if self.get_similar_account() is None:
-            return transaction_categories
+            return None
 
         raw_transactions = FireflyApi().get_transactions_from_account(self.get_similar_account())
 
@@ -143,12 +143,12 @@ class ParsedTransactionMessage:
 
         return None
 
-    def create_transaction_on_firefly(self):
+    def create_transaction_on_firefly(self, is_receipt: bool = False):
         destination_account = self.get_similar_account(default_name=True)
 
         transaction_data = {
             'type': 'withdrawal',
-            'date': self.getDate().isoformat(),
+            'date': self.getDate(is_receipt).isoformat(),
             'amount': self.amount,
             'description': self.get_possible_transaction_description(),
             'source_id': FIREFLY_DEFAULT_ACCOUNT_ID,
@@ -174,6 +174,8 @@ class ParsedTransactionMessage:
             "fire_webhooks":            False,
             "error_if_duplicate_hash":  False
         }
+        
+        print(payload)
 
         response = FireflyApi().post_json('transactions', payload=payload, debug=True)
         
