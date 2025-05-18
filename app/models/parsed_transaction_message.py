@@ -175,8 +175,6 @@ class ParsedTransactionMessage:
             "error_if_duplicate_hash":  False
         }
 
-        print(payload)
-
         response = FireflyApi().post_json('transactions', payload=payload, debug=True)
-
-        print(response.json())
+        
+        return response

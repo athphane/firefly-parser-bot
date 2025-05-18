@@ -38,6 +38,14 @@ class FireflyApi:
             return response.json()
         else:
             raise Exception(f"Error: {response.status_code} - {response.text}")
+        
+    def transaction_show_url(self, transaction_id: str):
+        """
+        Get the URL to show a transaction in Firefly.
+        :param transaction_id: The ID of the transaction.
+        :return: The URL to show the transaction.
+        """
+        return f"{self.base_url}/transactions/show/{transaction_id}"
 
     def post_json(self, endpoint: str, payload: dict, debug: bool = False):
         """

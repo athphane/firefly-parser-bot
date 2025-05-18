@@ -1,12 +1,12 @@
 import json
-
 from groq import Groq
 from groq.types.chat import ChatCompletionSystemMessageParam, ChatCompletionUserMessageParam
 from groq.types.chat.completion_create_params import ResponseFormat
 from pyrogram import filters
-from pyrogram.enums import ChatAction
-from pyrogram.types import Message
+from app.firefly.firefly import FireflyApi
 
+from pyrogram.enums import ChatAction
+from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 from app import FireflyParserBot, TELEGRAM_ADMINS, GROQ_API_KEY
 from app.models.parsed_transaction_message import ParsedTransactionMessage
 
@@ -74,7 +74,33 @@ async def incoming_transaction_message(_, message: Message):
         raw_transaction_message=message.text
     )
 
-    parsed_transaction_message.create_transaction_on_firefly()
+    response = parsed_transaction_message.create_transaction_on_firefly()
+
+    # Prepare a concise reply with transaction details and a button link using Pyrogram's InlineKeyboardMarkup
+    try:
+        transaction = response.json()['data']['attributes']['transactions'][0]
+        transaction_id = response.json()['data']['id']
+        
+        link = FireflyApi().transaction_show_url(transaction_id)
+        
+        details = (
+            f"**Transaction created!**\n"
+            f"**Description:** {transaction.get('description')}\n"
+            f"**Amount:** {float(transaction.get('amount')):.2f} {transaction.get('currency_code')}\n"
+            f"**Date & Time:** {transaction.get('date')}\n"
+            f"**Destination:** {transaction.get('destination_name')}"
+        )
+        
+        markup = InlineKeyboardMarkup([
+            [InlineKeyboardButton("View in Firefly", url=link)]
+        ])
+        
+        await message.reply(details, reply_markup=markup)
+        return
+    except Exception as e:
+        details = f"Transaction created, but could not parse details. Error: {e}"
+        await message.reply(details)
+        return
 
 
 def get_system_message_for_text():
