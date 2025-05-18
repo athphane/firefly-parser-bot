@@ -168,12 +168,15 @@ class ParsedTransactionMessage:
             transaction_data['foreign_currency'] = self.get_currency()
             transaction_data['foreign_amount'] = self.amount
 
-        request_body = {
-            'transactions': [transaction_data],
+        payload = {
+            "transactions": [transaction_data],
+            "apply_rules":              True,
+            "fire_webhooks":            False,
+            "error_if_duplicate_hash":  False
         }
 
-        print(request_body)
+        print(payload)
 
-        response = FireflyApi().post_json('transactions', payload=request_body, debug=True)
+        response = FireflyApi().post_json('transactions', payload=payload, debug=True)
 
         print(response.json())

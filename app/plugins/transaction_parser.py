@@ -11,16 +11,18 @@ from app import FireflyParserBot, TELEGRAM_ADMINS, GROQ_API_KEY
 from app.models.parsed_transaction_message import ParsedTransactionMessage
 
 
-@FireflyParserBot.on_message(filters.private & filters.text & filters.user(TELEGRAM_ADMINS), group=100)
-async def incoming_transaction_message(_, message: Message):
-    await message.reply_chat_action(ChatAction.TYPING)
-
+def extract_transaction_details_from_text(text: str) -> dict:
+    """
+    Uses Groq AI to extract transaction details from the given text.
+    Returns a dict with keys: card, date, time, currency, amount, location, approval_code, reference_no.
+    Returns None if parsing fails or required fields are missing.
+    """
     client = Groq(api_key=GROQ_API_KEY)
     completion = client.chat.completions.create(
         model="meta-llama/llama-4-scout-17b-16e-instruct",
         messages=[
             ChatCompletionSystemMessageParam(role='system', content=get_system_message_for_text()),
-            ChatCompletionUserMessageParam(role='user', content=message.text),
+            ChatCompletionUserMessageParam(role='user', content=text),
         ],
         temperature=1,
         max_completion_tokens=1024,
@@ -31,14 +33,30 @@ async def incoming_transaction_message(_, message: Message):
     )
 
     ai_response = completion.choices[0].message.content
+    
+    try:
+        json_decoded = json.loads(ai_response)
+    except Exception:
+        return None
+    
+    required_keys = [
+        'card', 'date', 'time', 'currency', 'amount',
+        'location', 'approval_code', 'reference_no'
+    ]
+    
+    if any(json_decoded.get(k) is None for k in required_keys):
+        return None
+    
+    return json_decoded
 
-    json_decoded = json.loads(ai_response)
 
-    # check if all the keys are not None
-    if json_decoded.get('card') is None or json_decoded.get('date') is None or json_decoded.get('time') is None \
-            or json_decoded.get('currency') is None or json_decoded.get('amount') is None \
-            or json_decoded.get('location') is None or json_decoded.get('approval_code') is None \
-            or json_decoded.get('reference_no') is None:
+@FireflyParserBot.on_message(filters.private & filters.text & filters.user(TELEGRAM_ADMINS), group=100)
+async def incoming_transaction_message(_, message: Message):
+    await message.reply_chat_action(ChatAction.TYPING)
+
+    json_decoded = extract_transaction_details_from_text(message.text)
+
+    if json_decoded is None:
         await message.reply("I could not parse the transaction. Please try again.")
         return
 

@@ -55,7 +55,7 @@ class FireflyApi:
             'Authorization': f'Bearer {self.api_key}'
         }
 
-        response = requests.post(url, headers=headers, data=payload)
+        response = requests.post(url, headers=headers, json=payload)
 
         if debug:
             return response
