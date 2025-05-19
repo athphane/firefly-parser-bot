@@ -5,8 +5,6 @@ services:
     environment:
       MONGO_INITDB_ROOT_USERNAME: admin
       MONGO_INITDB_ROOT_PASSWORD: password
-    volumes:
-      - ./mongo:/data/db
     restart: always
     networks:
       - firefly-network
