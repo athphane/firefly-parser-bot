@@ -2,7 +2,7 @@ import json
 from groq import Groq
 from groq.types.chat.chat_completion_content_part_image_param import ChatCompletionContentPartImageParam, ImageURL
 from groq.types.chat import ChatCompletionSystemMessageParam, ChatCompletionUserMessageParam, ChatCompletionContentPartTextParam
-from groq.types.chat.completion_create_params import ResponseFormat
+from groq.types.chat.completion_create_params import ResponseFormatResponseFormatJsonObject
 from pyrogram import filters
 from app.firefly.firefly import FireflyApi
 
@@ -42,7 +42,7 @@ def extract_transaction_details_from_image(path) -> dict:
         max_completion_tokens=1024,
         top_p=1,
         stream=False,
-        response_format=ResponseFormat(type='json_object'),
+        response_format=ResponseFormatResponseFormatJsonObject(type='json_object'),
         stop=None,
     )
 
@@ -81,7 +81,7 @@ def extract_transaction_details_from_text(text: str) -> dict:
         max_completion_tokens=1024,
         top_p=1,
         stream=False,
-        response_format=ResponseFormat(type='json_object'),
+        response_format=ResponseFormatResponseFormatJsonObject(type='json_object'),
         stop=None,
     )
 
