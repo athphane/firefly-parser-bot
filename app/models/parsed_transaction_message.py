@@ -1,4 +1,3 @@
-import sys
 from datetime import datetime
 from importlib.metadata import unique_everseen
 from typing import Union
@@ -61,9 +60,12 @@ class ParsedTransactionMessage:
                 return 16.20
             case _:
                 return 1
+            
+    def get_amount(self) -> float:
+        return float(self.amount)
 
     def local_amount(self) -> float:
-        return round(self.amount * self.exchange_rate(), 2)
+        return round(self.get_amount() * self.exchange_rate(), 2)
 
     def getDate(self, is_recept: bool = False):
         if is_recept:
@@ -149,7 +151,7 @@ class ParsedTransactionMessage:
         transaction_data = {
             'type': 'withdrawal',
             'date': self.getDate(is_receipt).isoformat(),
-            'amount': self.amount,
+            'amount': self.get_amount(),
             'description': self.get_possible_transaction_description(),
             'source_id': FIREFLY_DEFAULT_ACCOUNT_ID,
             'category_id': self.get_possible_category(),
@@ -165,8 +167,8 @@ class ParsedTransactionMessage:
 
         if self.is_foreign_transaction():
             transaction_data['amount'] = self.local_amount()
-            transaction_data['foreign_currency'] = self.get_currency()
-            transaction_data['foreign_amount'] = self.amount
+            transaction_data['foreign_currency_code'] = self.get_currency()
+            transaction_data['foreign_amount'] = self.get_amount()
 
         payload = {
             "transactions": [transaction_data],
@@ -175,8 +177,6 @@ class ParsedTransactionMessage:
             "error_if_duplicate_hash":  False
         }
         
-        print(payload)
-
         response = FireflyApi().post_json('transactions', payload=payload, debug=True)
         
         return response

@@ -151,6 +151,7 @@ async def incoming_transaction_message(_, message: Message):
     except Exception as e:
         details = f"Transaction created, but could not parse details. Error: {e}"
         await message.reply(details)
+        print(e)
         return
 
 
