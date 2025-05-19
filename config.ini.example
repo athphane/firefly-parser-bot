@@ -15,3 +15,6 @@ auth_source =
 url = https://firefly.your-domain.com
 api_key = your_api_key
 default_account_id = 1
+
+[ai]
+groq_api_key = 
