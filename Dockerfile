@@ -6,8 +6,10 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
-COPY . .
+# Copy only necessary files
+COPY app/ ./app/
+COPY config.ini* ./
+COPY docker-compose.yml ./
 
 # Create directories for data persistence
 RUN mkdir -p workdir logs downloads
