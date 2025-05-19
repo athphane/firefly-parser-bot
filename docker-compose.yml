@@ -1,14 +1,12 @@
-version: '3.8'
-
 services:
   mongodb:
     image: mongo:latest
-    container_name: mongodb
+    container_name: firefly_parser_bot_mongodb
     environment:
-      MONGO_INITDB_ROOT_USERNAME: root
-      MONGO_INITDB_ROOT_PASSWORD: example
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: password
     volumes:
-      - mongo_data:/data/db
+      - ./mongo:/data/db
     restart: always
     networks:
       - firefly-network
@@ -33,6 +31,3 @@ networks:
   firefly-network:
     driver: bridge
 
-volumes:
-  mongo_data:
-    driver: local

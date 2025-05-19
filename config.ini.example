@@ -5,9 +5,9 @@ bot_token =
 admins =
 
 [mongo]
-url = localhost:27017
-username = root
-password = example
+url = firefly_parser_bot_mongodb:27017
+username = admin
+password = password
 db_name=firefly_sms_parser
 auth_source =
 
