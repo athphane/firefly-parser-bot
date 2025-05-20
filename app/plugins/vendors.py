@@ -7,7 +7,9 @@ from app import FireflyParserBot, TELEGRAM_ADMINS
 from app.database.vendorsdb import VendorsDB
 from app.firefly.firefly import FireflyApi
 
-VENDORS_PER_PAGE = 10
+# Layout constants
+VENDORS_PER_PAGE = 9  # Maximum vendors per page (3x3 grid)
+VENDORS_PER_ROW = 3    # Number of vendors per row
 
 
 @FireflyParserBot.on_message(filters.private & filters.user(TELEGRAM_ADMINS) & filters.command(["vendors"]), group=1)
@@ -23,6 +25,7 @@ async def list_vendors(_, message: Message):
 async def send_vendors_list(message_or_callback, page: int, query: str):
     db = VendorsDB()
     filter_ = {}
+    
     if query:
         # Case-insensitive search in name or aliases
         filter_ = {
@@ -31,9 +34,9 @@ async def send_vendors_list(message_or_callback, page: int, query: str):
                 {"aliases": {"$regex": query, "$options": "i"}}
             ]
         }
+        
     total_vendors = db.vendors.count_documents(filter_)
-    vendors_cursor = db.vendors.find(filter_).sort("name", 1).skip((page - 1) * VENDORS_PER_PAGE).limit(
-        VENDORS_PER_PAGE)
+    vendors_cursor = db.vendors.find(filter_).sort("name", 1).skip((page - 1) * VENDORS_PER_PAGE).limit(VENDORS_PER_PAGE)
     vendors = list(vendors_cursor)
 
     if not vendors:
@@ -41,33 +44,71 @@ async def send_vendors_list(message_or_callback, page: int, query: str):
         await message_or_callback.reply(text)
         return
 
-    text = f"Vendors (Page {page})"
+    # Calculate total pages
+    total_pages = (total_vendors + VENDORS_PER_PAGE - 1) // VENDORS_PER_PAGE
+    
+    text = f"📋 <b>Vendors</b> (Page {page}/{total_pages})"
     if query:
-        text += f" | Query: '{query}'"
-    text += ":\n"
-    for idx, vendor in enumerate(vendors, start=1 + (page - 1) * VENDORS_PER_PAGE):
-        text += f"{idx}. {vendor.get('name', 'Unnamed')}\n"
+        text += f" | Search: '<code>{query}</code>'"
+    text += "\n\n"
+    
+    # If we have many vendors, just provide a brief count instead of listing them all
+    if total_vendors > 20:
+        text += f"Found {total_vendors} vendors. Click a button below to view details.\n\n"
+    else:
+        # Otherwise list all vendors on this page with their number
+        for idx, vendor in enumerate(vendors, start=1 + (page - 1) * VENDORS_PER_PAGE):
+            text += f"{idx}: {vendor.get('name', 'Unnamed')}\n"
+        text += "\n"
 
-    # Buttons for each vendor
+    # Display vendors in a grid layout
+    vendors_to_display = vendors[:VENDORS_PER_PAGE]
+    
+    # Create buttons in a grid layout (3 per row)
     buttons = []
-    for idx, vendor in enumerate(vendors, start=1 + (page - 1) * VENDORS_PER_PAGE):
-        buttons.append([
-            InlineKeyboardButton(
-                f"✏️ {idx}",
-                callback_data=f"view_vendor:{vendor['_id']}"
-            )
-        ])
-
-    # Pagination row
+    current_row = []
+    
+    for idx, vendor in enumerate(vendors_to_display, start=1 + (page - 1) * VENDORS_PER_PAGE):
+        # Create button with just the index number
+        button = InlineKeyboardButton(
+            f"{idx}",
+            callback_data=f"view_vendor:{vendor['_id']}"
+        )
+        
+        current_row.append(button)
+        
+        # Add 3 buttons per row
+        if len(current_row) == VENDORS_PER_ROW:
+            buttons.append(current_row)
+            current_row = []
+    
+    # Add any remaining buttons in the last row
+    if current_row:
+        buttons.append(current_row)
+    
+    # Pagination row with consistent UI
     max_page = (total_vendors + VENDORS_PER_PAGE - 1) // VENDORS_PER_PAGE
     nav_buttons = []
+    
+    # Previous button (disabled if on first page)
     if page > 1:
         nav_buttons.append(InlineKeyboardButton("⬅️ Prev", callback_data=f"vendors_page:{page - 1}:{query}"))
+    else:
+        nav_buttons.append(InlineKeyboardButton("•", callback_data=f"noop"))
+    
+    # Page indicator as a separator
+    page_indicator = f"{page}/{max_page}"
+    nav_buttons.append(InlineKeyboardButton(page_indicator, callback_data="noop"))
+    
+    # Next button (disabled if on last page)
     if page < max_page:
         nav_buttons.append(InlineKeyboardButton("Next ➡️", callback_data=f"vendors_page:{page + 1}:{query}"))
-    if nav_buttons:
-        buttons.append(nav_buttons)
-
+    else:
+        nav_buttons.append(InlineKeyboardButton("•", callback_data=f"noop"))
+    
+    # Add navigation row
+    buttons.append(nav_buttons)
+    
     markup = InlineKeyboardMarkup(buttons)
 
     if isinstance(message_or_callback, Message):
@@ -79,6 +120,12 @@ async def send_vendors_list(message_or_callback, page: int, query: str):
 @FireflyParserBot.on_callback_query(filters.regex(r"^do_nothing"))
 async def do_nothing_callback(_, callback_query: CallbackQuery):
     await callback_query.answer()
+
+
+@FireflyParserBot.on_callback_query(filters.regex(r"^noop$"))
+async def noop_callback(_, callback_query: CallbackQuery):
+    # Handle no-operation callback for disabled buttons
+    await callback_query.answer("This button is not active")
 
 
 @FireflyParserBot.on_callback_query(filters.regex(r"^vendors_page:(\d+):(.*)$"))
