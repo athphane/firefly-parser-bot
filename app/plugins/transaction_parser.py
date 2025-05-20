@@ -6,101 +6,13 @@ from groq.types.chat.completion_create_params import ResponseFormatResponseForma
 from pyrogram import filters
 from app.firefly.firefly import FireflyApi
 
-import base64
 
 from pyrogram.enums import ChatAction
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
-from app import FireflyParserBot, TELEGRAM_ADMINS, GROQ_API_KEY
+from app import FireflyParserBot, TELEGRAM_ADMINS
 from app.models.parsed_transaction_message import ParsedTransactionMessage
 
-
-def encode_image(image_path: str) -> str:
-    """
-    Encodes an image to base64 format.
-    :param image_path: Path to the image file.
-    :return: Base64 encoded string of the image.
-    """
-    with open(image_path, 'rb') as image_file:
-        return base64.b64encode(image_file.read()).decode('utf-8')
-
-
-def extract_transaction_details_from_image(path) -> dict:
-    base_64_image = encode_image(path)
-    
-    image_for_ai = f"data:image/jpeg;base64,{base_64_image}"
-        
-    client = Groq(api_key=GROQ_API_KEY)
-    completion = client.chat.completions.create(
-        model="meta-llama/llama-4-scout-17b-16e-instruct",
-        messages=[
-            ChatCompletionUserMessageParam(role='user', content=[
-                ChatCompletionContentPartTextParam(type='text', text=get_system_message_for_image()),
-                ChatCompletionContentPartImageParam(type='image_url', image_url=ImageURL(detail='high', url=image_for_ai))
-                ]),
-        ],
-        temperature=1,
-        max_completion_tokens=1024,
-        top_p=1,
-        stream=False,
-        response_format=ResponseFormatResponseFormatJsonObject(type='json_object'),
-        stop=None,
-    )
-
-    ai_response = completion.choices[0].message.content
-    
-    try:
-        json_decoded = json.loads(ai_response)
-    except Exception:
-        return None
-    
-    required_keys = [
-        'date', 'time', 'currency', 'amount',
-        'location', 'reference_no'
-    ]
-    
-    if any(json_decoded.get(k) is None for k in required_keys):
-        return None
-    
-    return json_decoded
-
-
-def extract_transaction_details_from_text(text: str) -> dict:
-    """
-    Uses Groq AI to extract transaction details from the given text.
-    Returns a dict with keys: card, date, time, currency, amount, location, approval_code, reference_no.
-    Returns None if parsing fails or required fields are missing.
-    """
-    client = Groq(api_key=GROQ_API_KEY)
-    completion = client.chat.completions.create(
-        model="meta-llama/llama-4-scout-17b-16e-instruct",
-        messages=[
-            ChatCompletionSystemMessageParam(role='system', content=get_system_message_for_text()),
-            ChatCompletionUserMessageParam(role='user', content=text),
-        ],
-        temperature=1,
-        max_completion_tokens=1024,
-        top_p=1,
-        stream=False,
-        response_format=ResponseFormatResponseFormatJsonObject(type='json_object'),
-        stop=None,
-    )
-
-    ai_response = completion.choices[0].message.content
-    
-    try:
-        json_decoded = json.loads(ai_response)
-    except Exception:
-        return None
-    
-    required_keys = [
-        'card', 'date', 'time', 'currency', 'amount',
-        'location', 'approval_code', 'reference_no'
-    ]
-    
-    if any(json_decoded.get(k) is None for k in required_keys):
-        return None
-    
-    return json_decoded
+from app.plugins.transaction_utils import extract_transaction_details_from_image, extract_transaction_details_from_text
 
 
 @FireflyParserBot.on_message(filters.private & filters.text & filters.user(TELEGRAM_ADMINS), group=100)
