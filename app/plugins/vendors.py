@@ -52,14 +52,16 @@ async def send_vendors_list(message_or_callback, page: int, query: str):
         text += f" | Search: '<code>{query}</code>'"
     text += "\n\n"
     
-    # If we have many vendors, just provide a brief count instead of listing them all
-    if total_vendors > 20:
-        text += f"Found {total_vendors} vendors. Click a button below to view details.\n\n"
-    else:
-        # Otherwise list all vendors on this page with their number
-        for idx, vendor in enumerate(vendors, start=1 + (page - 1) * VENDORS_PER_PAGE):
-            text += f"{idx}: {vendor.get('name', 'Unnamed')}\n"
-        text += "\n"
+    # Always show the total count of vendors
+    text += f"Found {total_vendors} vendors"
+    if total_vendors > VENDORS_PER_PAGE:
+        text += f" (showing {len(vendors)} on this page)"
+    text += "\n\n"
+    
+    # List all vendors on the current page with their number
+    for idx, vendor in enumerate(vendors, start=1 + (page - 1) * VENDORS_PER_PAGE):
+        text += f"{idx}: {vendor.get('name', 'Unnamed')}\n"
+    text += "\n"
 
     # Display vendors in a grid layout
     vendors_to_display = vendors[:VENDORS_PER_PAGE]

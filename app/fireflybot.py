@@ -34,6 +34,7 @@ class FireflyParserBot(Client):
                     BotCommand('vendors', 'List all vendors'),
                     BotCommand('start', 'Start the bot'),
                     BotCommand('help', 'Show help message'),
+                    BotCommand('syncvendors', 'Fetch all vendors from Firefly'),
                 ],
                 scope=BotCommandScopeChat(chat_id=chat)
             )
