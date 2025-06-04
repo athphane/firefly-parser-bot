@@ -67,8 +67,8 @@ class ParsedTransactionMessage:
     def local_amount(self) -> float:
         return round(self.get_amount() * self.exchange_rate(), 2)
 
-    def getDate(self, is_recept: bool = False):
-        if is_recept:
+    def getDate(self, is_receipt: bool = False):
+        if is_receipt:
             self.is_receipt = True
 
         # use %M for minutes, %S for seconds
