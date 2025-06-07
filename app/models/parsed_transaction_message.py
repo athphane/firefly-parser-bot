@@ -82,15 +82,40 @@ class ParsedTransactionMessage:
             return None
 
     def get_similar_account(self, default_name: bool = False):
-        similar_account = VendorsDB().find_vendor_by_name_or_alias(self.location)
+        """
+        Tries to find a matching vendor account for the transaction location.
+        
+        Args:
+            default_name: If True and no match is found, returns the title-cased location.
+            
+        Returns:
+            The Firefly account ID if a vendor match is found,
+            the title-cased location if default_name is True and no match is found,
+            or None if no match is found and default_name is False.
+        """
+        # Log the location we're trying to match
+        print(f"Looking for vendor match: '{self.location}'")
+        
+        # Try to find a matching vendor
+        vendor_db = VendorsDB()
+        similar_account = vendor_db.find_vendor_by_name_or_alias(self.location)
         
         if similar_account is None:
+            # Log that we didn't find a match
+            cleaned = vendor_db.clean_string_for_match(self.location)
+            print(f"No vendor match found for: '{self.location}' (cleaned: '{cleaned}')")
+            
             if default_name:
                 return self.location.title()
             else:
                 return None
-
-        return int(similar_account.get('firefly_account_id'))
+        else:
+            # Log that we found a match
+            vendor_name = similar_account.get('name')
+            vendor_id = similar_account.get('firefly_account_id')
+            print(f"Vendor match found: '{vendor_name}' (ID: {vendor_id}) for '{self.location}'")
+            
+            return int(vendor_id)
 
     def get_similar_transaction_descriptions(self):
         first_similar_account_id = self.get_similar_account()

@@ -1,3 +1,4 @@
+import re
 from bson import ObjectId
 from pyrogram import filters
 from pyrogram.enums import ChatAction
@@ -41,7 +42,10 @@ async def send_vendors_list(message_or_callback, page: int, query: str):
 
     if not vendors:
         text = f"No vendors found for query: '{query}'" if query else "No vendors found."
-        await message_or_callback.reply(text)
+        if isinstance(message_or_callback, Message):
+            await message_or_callback.reply(text)
+        else:
+            await message_or_callback.message.edit_text(text)
         return
 
     # Calculate total pages
@@ -136,6 +140,7 @@ async def vendors_page_callback(_, callback_query: CallbackQuery):
     parts = callback_query.data.split(":", 2)
     page = int(parts[1])
     query = parts[2] if len(parts) > 2 else ""
+    # Ensure proper handling of the query parameter
     await send_vendors_list(callback_query, page, query)
     await callback_query.answer()
 
@@ -263,6 +268,11 @@ async def view_vendor_callback(_, callback_query: CallbackQuery):
     firefly_id = vendor.get("firefly_account_id", "N/A")
     aliases = vendor.get("aliases", [])
     aliases_text = "\n".join([f"- {alias}" for alias in aliases]) if aliases else "(none)"
+    
+    # Generate the Firefly edit URL if we have a valid firefly_account_id
+    firefly_edit_url = None
+    if firefly_id and firefly_id != "N/A":
+        firefly_edit_url = get_firefly_account_edit_url(firefly_id)
 
     text = (
         f"Vendor Details:\n"
@@ -277,11 +287,18 @@ async def view_vendor_callback(_, callback_query: CallbackQuery):
         ],
         [
             InlineKeyboardButton("🔗 Manage Aliases", callback_data=f"manage_aliases:{vendor_id}")
-        ],
-        [
-            InlineKeyboardButton("🔙 Back to Vendors", callback_data=f"back_to_vendors")
         ]
     ]
+    
+    # Add a button to edit the vendor in Firefly III if we have a valid URL
+    if firefly_edit_url:
+        buttons.append([
+            InlineKeyboardButton("🔧 Edit in Firefly", url=firefly_edit_url)
+        ])
+    
+    buttons.append([
+        InlineKeyboardButton("🔙 Back to Vendors", callback_data=f"back_to_vendors")
+    ])
 
     markup = InlineKeyboardMarkup(buttons)
     
@@ -510,6 +527,11 @@ async def handle_edit_vendor_name_reply(_, message: Message):
             firefly_id = updated_vendor.get("firefly_account_id", "N/A")
             aliases = updated_vendor.get("aliases", [])
             aliases_text = "\n".join([f"- {alias}" for alias in aliases]) if aliases else "(none)"
+            
+            # Generate the Firefly edit URL if we have a valid firefly_account_id
+            firefly_edit_url = None
+            if firefly_id and firefly_id != "N/A":
+                firefly_edit_url = get_firefly_account_edit_url(firefly_id)
 
             text = (
                 f"Vendor Details:\n"
@@ -524,11 +546,18 @@ async def handle_edit_vendor_name_reply(_, message: Message):
                 ],
                 [
                     InlineKeyboardButton("🔗 Manage Aliases", callback_data=f"manage_aliases:{ctx['vendor_id']}")
-                ],
-                [
-                    InlineKeyboardButton("🔙 Back to Vendors", callback_data=f"back_to_vendors")
                 ]
             ]
+            
+            # Add a button to edit the vendor in Firefly III if we have a valid URL
+            if firefly_edit_url:
+                buttons.append([
+                    InlineKeyboardButton("🔧 Edit in Firefly", url=firefly_edit_url)
+                ])
+                
+            buttons.append([
+                InlineKeyboardButton("🔙 Back to Vendors", callback_data=f"back_to_vendors")
+            ])
 
             markup = InlineKeyboardMarkup(buttons)
             await original_message.edit_text(text, reply_markup=markup)
@@ -592,5 +621,24 @@ async def update_aliases_view(callback_query_or_message, vendor):
 @FireflyParserBot.on_callback_query(filters.regex(r"^back_to_vendors"))
 async def back_to_vendors_callback(_, callback_query: CallbackQuery):
     # Just show the vendors list with page 1 and no query
+    # This is intentional to reset any search filtering when returning to the vendors list
     await send_vendors_list(callback_query, 1, "")
     await callback_query.answer()
+
+
+def get_firefly_account_edit_url(account_id):
+    """
+    Generates a URL for editing an account in Firefly III
+    
+    Args:
+        account_id: The Firefly III account ID
+        
+    Returns:
+        A URL string to edit the account in Firefly III
+    """
+    from app import FIREFLY_BASE_URL
+    
+    if not account_id:
+        return None
+        
+    return f"{FIREFLY_BASE_URL}/accounts/edit/{account_id}"
