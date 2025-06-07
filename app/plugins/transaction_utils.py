@@ -38,20 +38,24 @@ def extract_transaction_details_from_image(path) -> dict:
     )
 
     ai_response = completion.choices[0].message.content
-    
+
     try:
         json_decoded = json.loads(ai_response)
     except Exception:
         return None
-    
+
+    # If the response is `null` or not a dict, return early
+    if not isinstance(json_decoded, dict):
+        return None
+
     required_keys = [
         'date', 'time', 'currency', 'amount',
         'location', 'reference_no'
     ]
-    
+
     if any(json_decoded.get(k) is None for k in required_keys):
         return None
-    
+
     return json_decoded
 
 def extract_transaction_details_from_text(text: str) -> dict:
@@ -76,20 +80,24 @@ def extract_transaction_details_from_text(text: str) -> dict:
     )
 
     ai_response = completion.choices[0].message.content
-    
+
     try:
         json_decoded = json.loads(ai_response)
     except Exception:
         return None
-    
+
+    # Ensure a valid dictionary was returned before accessing keys
+    if not isinstance(json_decoded, dict):
+        return None
+
     required_keys = [
         'card', 'date', 'time', 'currency', 'amount',
         'location', 'approval_code', 'reference_no'
     ]
-    
+
     if any(json_decoded.get(k) is None for k in required_keys):
         return None
-    
+
     return json_decoded
 
 def get_system_message_for_text():
