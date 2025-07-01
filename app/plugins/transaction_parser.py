@@ -1,8 +1,3 @@
-import json
-from groq import Groq
-from groq.types.chat.chat_completion_content_part_image_param import ChatCompletionContentPartImageParam, ImageURL
-from groq.types.chat import ChatCompletionSystemMessageParam, ChatCompletionUserMessageParam, ChatCompletionContentPartTextParam
-from groq.types.chat.completion_create_params import ResponseFormatResponseFormatJsonObject
 from pyrogram import filters
 from app.firefly.firefly import FireflyApi
 

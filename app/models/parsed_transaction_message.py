@@ -1,5 +1,4 @@
 from datetime import datetime
-from importlib.metadata import unique_everseen
 from typing import Union
 
 from app import FIREFLY_DEFAULT_ACCOUNT_ID
@@ -172,6 +171,12 @@ class ParsedTransactionMessage:
 
     def create_transaction_on_firefly(self, is_receipt: bool = False):
         destination_account = self.get_similar_account(default_name=True)
+        
+        tags = ['powered-by-groq']
+        
+        if is_receipt:
+            tags.append('from-receipt')
+            tags.append('ocr')
 
         transaction_data = {
             'type': 'withdrawal',
@@ -180,7 +185,7 @@ class ParsedTransactionMessage:
             'description': self.get_possible_transaction_description(),
             'source_id': FIREFLY_DEFAULT_ACCOUNT_ID,
             'category_id': self.get_possible_category(),
-            'tags': ['powered-by-groq'],
+            'tags': tags,
             'notes': f'Raw transaction message: {self.raw_transaction_message}' if self.raw_transaction_message else None,
         }
 
