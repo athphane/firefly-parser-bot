@@ -35,6 +35,8 @@ class FireflyParserBot(Client):
                     BotCommand('start', 'Start the bot'),
                     BotCommand('help', 'Show help message'),
                     BotCommand('syncvendors', 'Fetch all vendors from Firefly'),
+                    BotCommand('foreignsum', 'Show foreign transaction summary'),
+                    BotCommand('foreignsum_help', 'Show usage instructions for /foreignsum'),
                 ],
                 scope=BotCommandScopeChat(chat_id=chat)
             )

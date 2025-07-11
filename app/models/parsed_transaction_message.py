@@ -33,14 +33,15 @@ class ParsedTransactionMessage:
     @staticmethod
     def make(data):
         return ParsedTransactionMessage(
-            card=data['card'],
+            card=data.get('card'),
             date=data['date'],
             time=data['time'],
             currency=data['currency'],
             amount=data['amount'],
             location=data['location'],
-            approval_code=data['approval_code'],
+            approval_code=data.get('approval_code'),
             reference_no=data['reference_no'],
+            raw_transaction_message=data.get('raw_transaction_message')
         )
 
     def get_currency(self):
@@ -171,13 +172,10 @@ class ParsedTransactionMessage:
 
     def create_transaction_on_firefly(self, is_receipt: bool = False):
         destination_account = self.get_similar_account(default_name=True)
-        
+        # Only use system tags
         tags = ['powered-by-groq']
-        
         if is_receipt:
-            tags.append('from-receipt')
-            tags.append('ocr')
-
+            tags += ['from-receipt', 'ocr']
         transaction_data = {
             'type': 'withdrawal',
             'date': self.getDate(is_receipt).isoformat(),
@@ -188,25 +186,19 @@ class ParsedTransactionMessage:
             'tags': tags,
             'notes': f'Raw transaction message: {self.raw_transaction_message}' if self.raw_transaction_message else None,
         }
-
         if type(destination_account) is str:
             transaction_data['destination_name'] = destination_account
-
         if type(destination_account) is int:
             transaction_data['destination_id'] = destination_account
-
         if self.is_foreign_transaction():
             transaction_data['amount'] = self.local_amount()
             transaction_data['foreign_currency_code'] = self.get_currency()
             transaction_data['foreign_amount'] = self.get_amount()
-
         payload = {
             "transactions": [transaction_data],
             "apply_rules":              True,
             "fire_webhooks":            False,
             "error_if_duplicate_hash":  False
         }
-        
         response = FireflyApi().post_json('transactions', payload=payload, debug=True)
-        
         return response

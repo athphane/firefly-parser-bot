@@ -80,7 +80,7 @@ async def incoming_transfer_receipt(_, message: Message):
         currency=json_decoded['currency'],
         amount=json_decoded['amount'],
         location=json_decoded['location'],
-        reference_no=json_decoded['reference_no'],
+        reference_no=json_decoded['reference_no']
     )
 
     response = parsed_transaction_message.create_transaction_on_firefly(is_receipt=True)
