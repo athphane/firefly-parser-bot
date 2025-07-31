@@ -3,10 +3,13 @@ from bson import ObjectId
 from pyrogram import filters
 from pyrogram.enums import ChatAction
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, ForceReply
+import logging
 
 from app import FireflyParserBot, TELEGRAM_ADMINS
 from app.database.vendorsdb import VendorsDB
 from app.firefly.firefly import FireflyApi
+
+LOGS = logging.getLogger(__name__)
 
 # Layout constants
 VENDORS_PER_PAGE = 9  # Maximum vendors per page (3x3 grid)
@@ -174,7 +177,7 @@ async def sync_vendors(_, message: Message):
         notes: str = attributes.get('notes', '')
 
         if (notes is not None) and ('***NOT A VENDOR***' in notes):
-            print(f"Skipping vendor {attributes.get('name', account_id)}")
+            LOGS.info(f"Skipping vendor {attributes.get('name', account_id)}")
             skipped += 1
             continue
 
@@ -185,7 +188,7 @@ async def sync_vendors(_, message: Message):
                 description=attributes.get('description', ''),
                 firefly_account_id=account_id
             )
-            print(f"New vendor added: {attributes.get('name', '')}")
+            LOGS.info(f"New vendor added: {attributes.get('name', '')}")
             new_vendors += 1
 
         aliases = extract_aliases(notes)
@@ -196,7 +199,7 @@ async def sync_vendors(_, message: Message):
                     vendor_name=attributes.get('name', ''),
                     alias=alias
                 )
-                print(f"New alias added: {alias} to vendor {attributes.get('name', '')}")
+                LOGS.info(f"New alias added: {alias} to vendor {attributes.get('name', '')}")
                 new_aliases += 1
     
     # Delete vendors that are in the database but not in Firefly
@@ -205,7 +208,7 @@ async def sync_vendors(_, message: Message):
         vendor = db.find_vendor_by_firefly_account_id(account_id)
         if vendor:
             vendor_name = vendor.get('name', 'Unknown')
-            print(f"Deleting vendor no longer in Firefly: {vendor_name}")
+            LOGS.info(f"Deleting vendor no longer in Firefly: {vendor_name}")
             db.delete_vendor_by_firefly_account_id(account_id)
             deleted_vendors += 1
 
@@ -407,7 +410,7 @@ async def handle_add_alias_reply(_, message: Message):
         status_msg = await message.reply(f"✅ Alias '<code>{alias}</code>' added to <b>{vendor_name}</b>.")
         
         # Refresh the vendor view after a short delay
-        vendor = db.vendors.find_one({"_id": ObjectId(ctx["vendor_id"])})
+        vendor = db.vendors.find_one({"_id": ObjectId(ctx["vendor_id"])}) # Refresh vendor data
         
         # Update the original message with the new aliases list
         try:
@@ -568,7 +571,7 @@ async def handle_edit_vendor_name_reply(_, message: Message):
                 await asyncio.sleep(2)
                 await status_message.delete()
     except Exception as e:
-        print(f"Error updating vendor view: {e}")
+        LOGS.error(f"Error updating vendor view: {e}")
     
     FireflyParserBot._edit_vendor_name_context = None
     await message.stop_propagation()

@@ -1,8 +1,10 @@
 from pyrogram import Client
 from pyrogram.raw.all import layer
 from pyrogram.types import BotCommand, BotCommandScopeChat
-
+import logging
 import app
+
+LOGS = logging.getLogger(__name__)
 
 
 class FireflyParserBot(Client):
@@ -42,8 +44,8 @@ class FireflyParserBot(Client):
             )
 
         me = await self.get_me()
-        print(f"{self.__class__.__name__} v{self.version} (Layer {layer}) started on @{me.username}.\n"
-              f"Firefly Parser Bot is ready to serve.")
+        LOGS.info(f"{self.__class__.__name__} v{self.version} (Layer {layer}) started on @{me.username}.\n"
+                  f"Firefly Parser Bot is ready to serve.")
 
     async def stop(self, *args):
         """
@@ -51,4 +53,4 @@ class FireflyParserBot(Client):
         :param args:
         """
         await super().stop()
-        print(f"{self.__class__.__name__} stopped. Bye.")
+        LOGS.info(f"{self.__class__.__name__} stopped. Bye.")

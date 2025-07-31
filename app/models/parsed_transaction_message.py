@@ -1,9 +1,12 @@
 from datetime import datetime
 from typing import Union
+import logging
 
 from app import FIREFLY_DEFAULT_ACCOUNT_ID
 from app.database.vendorsdb import VendorsDB
 from app.firefly.firefly import FireflyApi
+
+LOGS = logging.getLogger(__name__)
 
 
 class ParsedTransactionMessage:
@@ -78,7 +81,7 @@ class ParsedTransactionMessage:
         try:
             return datetime.strptime(datetime_string, date_format)
         except ValueError as e:
-            print(f"Error parsing date: {e}.  datetime_string: {datetime_string}, format_string: {date_format}")
+            LOGS.error(f"Error parsing date: {e}.  datetime_string: {datetime_string}, format_string: {date_format}")
             return None
 
     def get_similar_account(self, default_name: bool = False):
@@ -94,7 +97,7 @@ class ParsedTransactionMessage:
             or None if no match is found and default_name is False.
         """
         # Log the location we're trying to match
-        print(f"Looking for vendor match: '{self.location}'")
+        LOGS.info(f"Looking for vendor match: '{self.location}'")
         
         # Try to find a matching vendor
         vendor_db = VendorsDB()
@@ -103,7 +106,7 @@ class ParsedTransactionMessage:
         if similar_account is None:
             # Log that we didn't find a match
             cleaned = vendor_db.clean_string_for_match(self.location)
-            print(f"No vendor match found for: '{self.location}' (cleaned: '{cleaned}')")
+            LOGS.info(f"No vendor match found for: '{self.location}' (cleaned: '{cleaned}')")
             
             if default_name:
                 return self.location.title()
@@ -113,7 +116,7 @@ class ParsedTransactionMessage:
             # Log that we found a match
             vendor_name = similar_account.get('name')
             vendor_id = similar_account.get('firefly_account_id')
-            print(f"Vendor match found: '{vendor_name}' (ID: {vendor_id}) for '{self.location}'")
+            LOGS.info(f"Vendor match found: '{vendor_name}' (ID: {vendor_id}) for '{self.location}'")
             
             return int(vendor_id)
 

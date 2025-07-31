@@ -1,6 +1,6 @@
 from pyrogram import filters
 from app.firefly.firefly import FireflyApi
-
+import logging
 
 from pyrogram.enums import ChatAction
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
@@ -8,6 +8,8 @@ from app import FireflyParserBot, TELEGRAM_ADMINS
 from app.models.parsed_transaction_message import ParsedTransactionMessage
 
 from app.plugins.transaction_utils import extract_transaction_details_from_image, extract_transaction_details_from_text
+
+LOGS = logging.getLogger(__name__)
 
 
 @FireflyParserBot.on_message(filters.private & filters.text & filters.user(TELEGRAM_ADMINS), group=100)
@@ -58,7 +60,7 @@ async def incoming_transaction_message(_, message: Message):
     except Exception as e:
         details = f"Transaction created, but could not parse details. Error: {e}"
         await message.reply(details)
-        print(e)
+        LOGS.error(e)
         return
 
 
