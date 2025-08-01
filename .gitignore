@@ -9,3 +9,4 @@ downloads
 down
 app/**/__pycache__/
 .syncedlyrics
+logs/
