@@ -1,6 +1,7 @@
 import requests
 
-from app import FIREFLY_BASE_URL, FIREFLY_API_KEY, FIREFLY_DEFAULT_ACCOUNT_ID
+from app import FIREFLY_BASE_URL, FIREFLY_API_KEY
+from app.models.transaction_models import Budget, Category
 
 
 class FireflyApi:
@@ -200,3 +201,53 @@ class FireflyApi:
         :return: JSON data
         """
         return self.get_json(f"accounts/{account_id}/transactions")
+
+    def get_budgets(self) -> list[Budget]:
+        """
+        Get all budgets
+        :return: JSON data
+        """
+        response = self.get_json('budgets')
+        budgets = []
+        for budget in response['data']:
+            budgets.append(Budget(
+                id=budget['id'],
+                name=budget['attributes']['name']
+            ))
+        return budgets
+
+    def get_categories(self) -> list[Category]:
+        """
+        Get all categories
+        :return: JSON data
+        """
+        response = self.get_json('categories')
+        categories = []
+        for category in response['data']:
+            categories.append(Category(
+                id=category['id'],
+                name=category['attributes']['name']
+            ))
+        return categories
+
+    def update_transaction(self, transaction_id: str, payload: dict):
+        """
+        Update a transaction
+        :param transaction_id: The ID of the transaction to update.
+        :param payload: JSON payload with the fields to update (e.g., {'transactions[0][budget_id]': '123'}).
+        :return: Response JSON or raises an exception on failure.
+        """
+        return self.put_json(f"transactions/{transaction_id}", payload)
+
+    def get_recent_transactions(self, limit: int = 10):
+        """
+        Get recent transactions
+        :param limit: The number of recent transactions to retrieve.
+        :return: JSON data
+        """
+        params = {
+            'limit': limit,
+            'sort': 'date',
+            'order': 'desc'
+        }
+        return self.get_json('transactions', params)

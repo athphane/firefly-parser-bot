@@ -1,4 +1,3 @@
-import re
 from bson import ObjectId
 from pyrogram import filters
 from pyrogram.enums import ChatAction
@@ -103,7 +102,7 @@ async def send_vendors_list(message_or_callback, page: int, query: str):
     if page > 1:
         nav_buttons.append(InlineKeyboardButton("⬅️ Prev", callback_data=f"vendors_page:{page - 1}:{query}"))
     else:
-        nav_buttons.append(InlineKeyboardButton("•", callback_data=f"noop"))
+        nav_buttons.append(InlineKeyboardButton("•", callback_data="noop"))
     
     # Page indicator as a separator
     page_indicator = f"{page}/{max_page}"
@@ -113,7 +112,7 @@ async def send_vendors_list(message_or_callback, page: int, query: str):
     if page < max_page:
         nav_buttons.append(InlineKeyboardButton("Next ➡️", callback_data=f"vendors_page:{page + 1}:{query}"))
     else:
-        nav_buttons.append(InlineKeyboardButton("•", callback_data=f"noop"))
+        nav_buttons.append(InlineKeyboardButton("•", callback_data="noop"))
     
     # Add navigation row
     buttons.append(nav_buttons)
@@ -300,7 +299,7 @@ async def view_vendor_callback(_, callback_query: CallbackQuery):
         ])
     
     buttons.append([
-        InlineKeyboardButton("🔙 Back to Vendors", callback_data=f"back_to_vendors")
+        InlineKeyboardButton("🔙 Back to Vendors", callback_data="back_to_vendors")
     ])
 
     markup = InlineKeyboardMarkup(buttons)
@@ -559,7 +558,7 @@ async def handle_edit_vendor_name_reply(_, message: Message):
                 ])
                 
             buttons.append([
-                InlineKeyboardButton("🔙 Back to Vendors", callback_data=f"back_to_vendors")
+                InlineKeyboardButton("🔙 Back to Vendors", callback_data="back_to_vendors")
             ])
 
             markup = InlineKeyboardMarkup(buttons)

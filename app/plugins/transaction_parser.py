@@ -7,6 +7,7 @@ from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 from app import FireflyParserBot, TELEGRAM_ADMINS
 from app.models.parsed_transaction_message import ParsedTransactionMessage
 
+from app.plugins.transaction_customization import TRANSACTION_ID_PREFIX
 from app.plugins.transaction_utils import extract_transaction_details_from_image, extract_transaction_details_from_text
 
 LOGS = logging.getLogger(__name__)
@@ -52,7 +53,8 @@ async def incoming_transaction_message(_, message: Message):
         )
         
         markup = InlineKeyboardMarkup([
-            [InlineKeyboardButton("View in Firefly", url=link)]
+            [InlineKeyboardButton("View in Firefly", url=link)],
+            [InlineKeyboardButton("Customize Transaction", callback_data=f"{TRANSACTION_ID_PREFIX}{transaction_id}")]
         ])
         
         await message.reply(details, reply_markup=markup)
@@ -104,7 +106,8 @@ async def incoming_transfer_receipt(_, message: Message):
         )
         
         markup = InlineKeyboardMarkup([
-            [InlineKeyboardButton("View in Firefly", url=link)]
+            [InlineKeyboardButton("View in Firefly", url=link)],
+            [InlineKeyboardButton("Customize Transaction", callback_data=f"{TRANSACTION_ID_PREFIX}{transaction_id}")]
         ])
         
         await message.reply(details, reply_markup=markup)
