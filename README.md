@@ -1,120 +1,81 @@
-# Firefly SMS Parser
+# Firefly Parser Bot
 
-Firefly SMS Parser is a tool designed to extract and process text from SMS messages, including those embedded in images using Optical Character Recognition (OCR) and AI technologies.
+## Overview
+
+The `firefly-parser-bot` is a Python-based Telegram bot designed to automate the process of tracking personal finances by integrating with [Firefly III](https://www.firefly-iii.org/), a powerful open-source financial manager. This bot allows you to effortlessly log your transactions by simply forwarding SMS messages from your bank directly to the bot. It parses the transaction details and creates corresponding records in your Firefly III instance via its API.
 
 ## Features
 
-- Extracts text from SMS messages and images
-- Utilizes advanced OCR and AI models for high accuracy
-- Easy integration into existing workflows
-- Automated processing of transaction messages for Firefly III
+*   **SMS Transaction Parsing:** Automatically extracts key information like amount, currency, vendor, and transaction type from bank SMS messages.
+*   **Firefly III Integration:** Seamlessly creates new transactions in your Firefly III instance.
+*   **Vendor Mapping:** Maps parsed vendor names to pre-configured Firefly III asset accounts for accurate categorization.
+*   **Telegram Interface:** Interact with the bot directly through Telegram for convenience and real-time feedback.
+*   **Extensible Plugin System:** Modular design allows for easy addition of new parsing rules or functionalities.
 
-## Installation
+## How it Works
 
-```bash
-git clone https://github.com/athphane/firefly-sms-parser.git
-cd firefly-sms-parser
-pip install -r requirements.txt
-```
+1.  **Forward SMS:** You forward a transaction SMS from your bank to the Telegram bot.
+2.  **Parse & Extract:** The bot utilizes a sophisticated parsing engine (`transaction_parser.py`) to identify and extract crucial details from the SMS text.
+3.  **Categorize & Map:** It queries a local database (`vendorsdb.py`) to match the extracted vendor/merchant name with your defined Firefly III asset accounts.
+4.  **Create Transaction:** The bot then communicates with your Firefly III instance via its API (`firefly.py`) to create a new transaction record.
+5.  **Confirmation:** You receive instant feedback on Telegram, confirming the successful creation of the transaction or notifying you of any issues.
 
-## Deployment Guide
+## Setup and Installation
+
+To get the Firefly Parser Bot up and running, follow these steps:
 
 ### Prerequisites
 
-- Docker and Docker Compose installed
-- Telegram API credentials (api_id, api_hash)
-- Telegram Bot Token
-- Firefly III instance with API key
-- Groq API key for AI functionality
+*   A running instance of [Firefly III](https://www.firefly-iii.org/).
+*   A Telegram Bot Token (obtainable from BotFather on Telegram).
+*   Python 3.8 or higher.
 
-### Step 1: Configuration Setup
+### Installation Steps
 
-1. Copy the example configuration file to create your own:
-   ```bash
-   cp config.ini.example config.ini
-   ```
+1.  **Clone the Repository:**
+    ```bash
+    git clone https://github.com/your-username/firefly-parser-bot.git
+    cd firefly-parser-bot
+    ```
 
-2. Edit the config.ini file with your credentials:
-   ```ini
-   [pyrogram]
-   api_id = YOUR_TELEGRAM_API_ID
-   api_hash = YOUR_TELEGRAM_API_HASH
-   bot_token = YOUR_TELEGRAM_BOT_TOKEN
-   admins = COMMA_SEPARATED_TELEGRAM_USER_IDS
-   
-   [mongo]
-   url = firefly_parser_bot_mongodb:27017
-   username = admin
-   password = password
-   db_name = firefly_sms_parser
-   auth_source = admin
-   
-   [firefly]
-   url = https://firefly.your-domain.com
-   api_key = YOUR_FIREFLY_API_KEY
-   default_account_id = YOUR_ACCOUNT_ID
-   
-   [ai]
-   groq_api_key = YOUR_GROQ_API_KEY
-   ```
+2.  **Install Dependencies:**
+    It's recommended to use a virtual environment.
+    ```bash
+    python -m venv venv
+    source venv/bin/activate  # On Windows, use `venv\Scripts\activate`
+    pip install -r requirements.txt
+    ```
 
-### Step 2: Create Required Directories
+3.  **Configure the Bot:**
+    Copy the example configuration file and fill in your details:
+    ```bash
+    cp config.ini.example config.ini
+    ```
+    Open `config.ini` and update the following sections:
+    *   `[telegram]`: Add your `bot_token`.
+    *   `[firefly]`: Provide your `firefly_iii_url` and `firefly_iii_api_token`.
+    *   `[database]`: Configure your database settings (e.g., SQLite path).
+    *   Adjust other parameters like `default_currency` as needed.
 
-Ensure the following directories exist in your project folder:
-```bash
-mkdir -p workdir logs downloads
-```
+4.  **Run the Bot:**
+    ```bash
+    python -m app
+    ```
+    Your bot should now be running and accessible via Telegram.
 
-### Step 3: Deploy with Docker Compose
+## Project Structure
 
-1. Start the application using Docker Compose:
-   ```bash
-   docker-compose up -d
-   ```
-
-2. To check if the containers are running correctly:
-   ```bash
-   docker-compose ps
-   ```
-
-3. View application logs:
-   ```bash
-   docker-compose logs -f app
-   ```
-
-### Step 4: Interacting with the Bot
-
-1. Start a chat with your bot on Telegram
-2. Send SMS screenshots or forward SMS messages to the bot
-3. The bot will process the messages and send the data to your Firefly III instance
-
-### Updating the Application
-
-To update the application to the latest version:
-
-```bash
-git pull
-docker-compose down
-docker-compose build --no-cache
-docker-compose up -d
-```
-
-### Troubleshooting
-
-If you encounter issues:
-- Check the logs in the `logs` directory
-- Ensure all API keys and tokens are correct in your config.ini
-- Verify your MongoDB container is running properly
-- Make sure your Firefly III instance is accessible
-
-## Environmental Impact
-
-> **Note:** Each time an image is processed with OCR and AI, it can consume a significant amount of computational power—sometimes more than what a small village in Africa might use in a day. Please use this tool responsibly and be mindful of its energy consumption.
+*   `app/fireflybot.py`: Main application entry point and Telegram bot initialization.
+*   `app/plugins/`: Contains modular functionalities (e.g., `transaction_parser.py`, `vendors.py`).
+*   `app/firefly/firefly.py`: Handles all interactions with the Firefly III API.
+*   `app/database/vendorsdb.py`: Manages the local vendor mapping database.
+*   `config.ini.example`: Example configuration file.
+*   `requirements.txt`: Lists all Python dependencies.
 
 ## Contributing
 
-Contributions are welcome! Please open issues or submit pull requests.
+Contributions are welcome! Please feel free to open issues or submit pull requests.
 
 ## License
 
-This project is licensed under the MIT License.
+This project is licensed under the GNU General Public License v3.0 - see the LICENSE file for details.
