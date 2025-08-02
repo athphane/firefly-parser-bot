@@ -1,4 +1,4 @@
-from typing import Union, List
+from typing import Union
 import re
 from pymongo import ReturnDocument
 
@@ -115,6 +115,61 @@ class VendorsDB:
         return self.vendors.find_one({
             "firefly_account_id": account_id
         })
+
+    def clean_string_for_match(self, input_string: str) -> str:
+        """
+        Cleans a string for comparison by converting to lowercase and removing non-alphanumeric characters.
+        """
+        if not isinstance(input_string, str):
+            return ""
+        # Convert to lowercase and remove non-alphanumeric characters
+        cleaned_string = re.sub(r'[^a-z0-9]', '', input_string.lower())
+        return cleaned_string
+
+    def get_all_firefly_account_ids(self) -> list:
+        """
+        Returns a list of all unique firefly_account_id values from the vendors collection.
+        """
+        return self.vendors.distinct("firefly_account_id")
+
+    def vendor_has_alias(self, vendor_name: str, alias: str) -> bool:
+        """
+        Checks if a vendor already has a specific alias, considering both exact and cleaned string matches.
+        """
+        vendor = self.find_vendor_by_title(vendor_name)
+        if not vendor:
+            return False
+
+        existing_aliases = vendor.get('aliases', [])
+        cleaned_new_alias = self.clean_string_for_match(alias)
+
+        for existing_alias in existing_aliases:
+            if existing_alias == alias or self.clean_string_for_match(existing_alias) == cleaned_new_alias:
+                return True
+        return False
+
+    def delete_vendor_by_firefly_account_id(self, account_id: int):
+        """
+        Deletes a vendor by its Firefly account ID.
+        """
+        return self.vendors.delete_one({"firefly_account_id": account_id})
+
+    def count_vendors(self) -> int:
+        """
+        Returns the total number of vendors in the database.
+        """
+        return self.vendors.count_documents({})
+
+    def count_aliases(self) -> int:
+        """
+        Returns the total number of aliases across all vendors in the database.
+        """
+        pipeline = [
+            {"$unwind": "$aliases"},
+            {"$count": "totalAliases"}
+        ]
+        result = list(self.vendors.aggregate(pipeline))
+        return result[0]["totalAliases"] if result else 0
 
     
 
