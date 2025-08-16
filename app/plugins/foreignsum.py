@@ -228,6 +228,12 @@ async def foreign_sum(_, message: Message):
     - 'csv' keyword exports full data.
     - Dates for range should be in YYYY-MM-DD format.
     """
+    # Clear any existing reply contexts
+    if hasattr(FireflyParserBot, '_add_alias_context'):
+        FireflyParserBot._add_alias_context = None
+    if hasattr(FireflyParserBot, '_edit_vendor_name_context'):
+        FireflyParserBot._edit_vendor_name_context = None
+        
     args = parse_arguments(message.text.split())
 
     if args.error_message:

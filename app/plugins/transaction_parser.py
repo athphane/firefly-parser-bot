@@ -13,8 +13,19 @@ from app.plugins.transaction_utils import extract_transaction_details_from_image
 LOGS = logging.getLogger(__name__)
 
 
+def clear_reply_contexts():
+    """Clear any existing reply contexts to prevent conflicts."""
+    if hasattr(FireflyParserBot, '_add_alias_context'):
+        FireflyParserBot._add_alias_context = None
+    if hasattr(FireflyParserBot, '_edit_vendor_name_context'):
+        FireflyParserBot._edit_vendor_name_context = None
+
+
 @FireflyParserBot.on_message(filters.private & filters.text & filters.user(TELEGRAM_ADMINS), group=100)
 async def incoming_transaction_message(_, message: Message):
+    # Clear any vendor management reply contexts
+    clear_reply_contexts()
+    
     await message.reply_chat_action(ChatAction.TYPING)
 
     json_decoded = extract_transaction_details_from_text(message.text)
@@ -68,6 +79,9 @@ async def incoming_transaction_message(_, message: Message):
 
 @FireflyParserBot.on_message(filters.private & filters.photo & filters.user(TELEGRAM_ADMINS), group=100)
 async def incoming_transfer_receipt(_, message: Message):
+    # Clear any vendor management reply contexts
+    clear_reply_contexts()
+    
     await message.reply_chat_action(ChatAction.TYPING)
     
     path = await message.download()

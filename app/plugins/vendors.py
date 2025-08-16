@@ -18,6 +18,12 @@ VENDORS_PER_ROW = 3    # Number of vendors per row
 @FireflyParserBot.on_message(filters.private & filters.user(TELEGRAM_ADMINS) & filters.command(["vendors"]), group=1)
 async def list_vendors(_, message: Message):
     await message.reply_chat_action(ChatAction.TYPING)
+    # Clear any existing reply contexts
+    if hasattr(FireflyParserBot, '_add_alias_context'):
+        FireflyParserBot._add_alias_context = None
+    if hasattr(FireflyParserBot, '_edit_vendor_name_context'):
+        FireflyParserBot._edit_vendor_name_context = None
+        
     # Extract query from the command (everything after /vendors)
     query = message.text.split(maxsplit=1)[1] if len(message.text.split(maxsplit=1)) > 1 else ""
     page = 1
@@ -150,6 +156,12 @@ async def vendors_page_callback(_, callback_query: CallbackQuery):
 @FireflyParserBot.on_message(filters.private & filters.user(TELEGRAM_ADMINS) & filters.command(["syncvendors"]),
                              group=1)
 async def sync_vendors(_, message: Message):
+    # Clear any existing reply contexts
+    if hasattr(FireflyParserBot, '_add_alias_context'):
+        FireflyParserBot._add_alias_context = None
+    if hasattr(FireflyParserBot, '_edit_vendor_name_context'):
+        FireflyParserBot._edit_vendor_name_context = None
+        
     await message.reply("Syncing vendors. Please wait...")
     await message.reply_chat_action(ChatAction.TYPING)
 
@@ -372,11 +384,92 @@ async def add_alias_callback(_, callback_query: CallbackQuery):
     await callback_query.answer()
 
 
-@FireflyParserBot.on_message(filters.private & filters.user(TELEGRAM_ADMINS), group=10)
+def is_reply_to_forcereply(message: Message, context_type: str) -> bool:
+    """
+    Check if a message is a reply to a ForceReply message.
+    
+    Args:
+        message: The message to check
+        context_type: Either "_add_alias_context" or "_edit_vendor_name_context"
+        
+    Returns:
+        True if the message is a reply to the expected ForceReply, False otherwise
+    """
+    if not message.reply_to_message_id:
+        return False
+        
+    ctx = getattr(FireflyParserBot, context_type, None)
+    if not ctx:
+        return False
+        
+    # Check if this message is a reply to our ForceReply message
+    return ctx.get("reply_message_id") == message.reply_to_message_id
+
+
+@FireflyParserBot.on_message(filters.private & filters.user(TELEGRAM_ADMINS), group=5)
 async def handle_add_alias_reply(_, message: Message):
-    ctx = getattr(FireflyParserBot, "_add_alias_context", None)
-    if not ctx or ctx["user_id"] != message.from_user.id:
-        return
+    # Check if this is a reply to our ForceReply for adding aliases
+    if is_reply_to_forcereply(message, "_add_alias_context"):
+        # Process the alias addition
+        ctx = getattr(FireflyParserBot, "_add_alias_context", None)
+        if ctx and ctx["user_id"] == message.from_user.id:
+            # Handle the alias addition as before
+            db = VendorsDB()
+            vendor = db.vendors.find_one({"_id": ObjectId(ctx["vendor_id"])})
+            vendor_name = vendor.get('name')
+            alias = message.text.strip()
+            
+            # Try to delete the ForceReply message to clean up the chat
+            try:
+                if "reply_message_id" in ctx:
+                    await message.chat.delete_messages(ctx["reply_message_id"])
+            except Exception:
+                pass  # Ignore if we can't delete it
+                
+            if alias and not db.vendor_has_alias(vendor_name, alias):
+                db.add_alias_to_vendor(vendor_name, alias)
+                firefly_id = vendor.get("firefly_account_id")
+
+                # Sync aliases with Firefly
+                if firefly_id:
+                    updated_aliases = vendor.get("aliases", [])
+                    updated_aliases.append(alias)
+                    try:
+                        FireflyApi().update_account_aliases(firefly_id, updated_aliases)
+                    except Exception as e:
+                        await message.reply(f"Alias added locally, but failed to sync with Firefly: {e}")
+                        FireflyParserBot._add_alias_context = None
+                        await message.stop_propagation()
+                        return
+
+                status_msg = await message.reply(f"✅ Alias '<code>{alias}</code>' added to <b>{vendor_name}</b>.")
+                
+                # Refresh the vendor view after a short delay
+                vendor = db.vendors.find_one({"_id": ObjectId(ctx["vendor_id"])}) # Refresh vendor data
+                
+                # Update the original message with the new aliases list
+                try:
+                    original_message = await message.chat.get_messages(ctx["message_id"])
+                    await update_aliases_view(original_message, vendor)
+                    
+                    # Delete the status message after a short delay to clean up the chat
+                    import asyncio
+                    await asyncio.sleep(2)
+                    await status_msg.delete()
+                except Exception:
+                    pass  # Ignore if we can't update/delete
+            else:
+                await message.reply("Alias is empty or already exists.")
+            
+            FireflyParserBot._add_alias_context = None
+            await message.stop_propagation()
+    
+    # If this is not a reply to our ForceReply, clear contexts
+    elif not message.reply_to_message_id:
+        if hasattr(FireflyParserBot, '_add_alias_context'):
+            FireflyParserBot._add_alias_context = None
+        if hasattr(FireflyParserBot, '_edit_vendor_name_context'):
+            FireflyParserBot._edit_vendor_name_context = None
     db = VendorsDB()
 
     vendor = db.vendors.find_one({"_id": ObjectId(ctx["vendor_id"])})
@@ -468,11 +561,121 @@ async def edit_vendor_name_callback(_, callback_query: CallbackQuery):
     await callback_query.answer()
 
 
-@FireflyParserBot.on_message(filters.private & filters.user(TELEGRAM_ADMINS), group=11)
+@FireflyParserBot.on_message(filters.private & filters.user(TELEGRAM_ADMINS), group=5)
 async def handle_edit_vendor_name_reply(_, message: Message):
-    ctx = getattr(FireflyParserBot, "_edit_vendor_name_context", None)
-    if not ctx or ctx["user_id"] != message.from_user.id:
-        return
+    # Check if this is a reply to our ForceReply for editing vendor name
+    if is_reply_to_forcereply(message, "_edit_vendor_name_context"):
+        # Process the vendor name edit
+        ctx = getattr(FireflyParserBot, "_edit_vendor_name_context", None)
+        if ctx and ctx["user_id"] == message.from_user.id:
+            # Handle the vendor name edit as before
+            db = VendorsDB()
+            vendor = db.vendors.find_one({"_id": ObjectId(ctx["vendor_id"])})
+
+            old_vendor_name = vendor.get('name')
+            new_vendor_name = message.text.strip()
+            
+            # Try to delete the ForceReply message to clean up the chat
+            try:
+                if "reply_message_id" in ctx:
+                    await message.chat.delete_messages(ctx["reply_message_id"])
+            except Exception:
+                pass  # Ignore if we can't delete it
+
+            if new_vendor_name and not db.exists(new_vendor_name):
+                db.vendors.update_one({"name": old_vendor_name}, {"$set": {"name": new_vendor_name}})
+
+                # Update the name in Firefly
+                firefly_id = vendor.get("firefly_account_id")
+                status_message = None
+                
+                if firefly_id:
+                    try:
+                        FireflyApi().update_account_name(firefly_id, new_vendor_name)
+                        status_message = await message.reply(
+                            f"✅ Vendor name updated in the database and Firefly from '<code>{old_vendor_name}</code>' "
+                            f"to '<code>{new_vendor_name}</code>'."
+                        )
+                    except Exception as e:
+                        status_message = await message.reply(
+                            f"⚠️ Vendor name updated in the database, but failed to update in Firefly: {e}"
+                        )
+                else:
+                    status_message = await message.reply(
+                        f"✅ Vendor name updated in the database from '<code>{old_vendor_name}</code>' "
+                        f"to '<code>{new_vendor_name}</code>'. Firefly ID not found, so Firefly was not updated."
+                    )
+            else:
+                await message.reply("❌ The new name is empty or already exists.")
+                FireflyParserBot._edit_vendor_name_context = None
+                await message.stop_propagation()
+                return
+
+            # Refresh the vendor in the original message
+            try:
+                # Get updated vendor data
+                updated_vendor = db.vendors.find_one({"_id": ObjectId(ctx["vendor_id"])})
+                if updated_vendor:
+                    # Get the original message
+                    original_message = await message.chat.get_messages(ctx["message_id"])
+                    
+                    # Update the vendor details in the original message
+                    name = updated_vendor.get("name", "Unnamed")
+                    firefly_id = updated_vendor.get("firefly_account_id", "N/A")
+                    aliases = updated_vendor.get("aliases", [])
+                    aliases_text = "\n".join([f"- {alias}" for alias in aliases]) if aliases else "(none)"
+                    
+                    # Generate the Firefly edit URL if we have a valid firefly_account_id
+                    firefly_edit_url = None
+                    if firefly_id and firefly_id != "N/A":
+                        firefly_edit_url = get_firefly_account_edit_url(firefly_id)
+
+                    text = (
+                        f"Vendor Details:\n"
+                        f"Name: <b>{name}</b>\n"
+                        f"Firefly ID: <code>{firefly_id}</code>\n"
+                        f"Aliases:\n{aliases_text}\n\n"
+                    )
+                    
+                    buttons = [
+                        [
+                            InlineKeyboardButton("✏️ Edit Name", callback_data=f"edit_vendor_name:{ctx['vendor_id']}"),
+                        ],
+                        [
+                            InlineKeyboardButton("🔗 Manage Aliases", callback_data=f"manage_aliases:{ctx['vendor_id']}")
+                        ]
+                    ]
+                    
+                    # Add a button to edit the vendor in Firefly III if we have a valid URL
+                    if firefly_edit_url:
+                        buttons.append([
+                            InlineKeyboardButton("🔧 Edit in Firefly", url=firefly_edit_url)
+                        ])
+                        
+                    buttons.append([
+                        InlineKeyboardButton("🔙 Back to Vendors", callback_data="back_to_vendors")
+                    ])
+
+                    markup = InlineKeyboardMarkup(buttons)
+                    await original_message.edit_text(text, reply_markup=markup)
+                    
+                    # Delete the status message after a short delay to clean up the chat
+                    if status_message:
+                        import asyncio
+                        await asyncio.sleep(2)
+                        await status_message.delete()
+            except Exception as e:
+                LOGS.error(f"Error updating vendor view: {e}")
+            
+            FireflyParserBot._edit_vendor_name_context = None
+            await message.stop_propagation()
+    
+    # If this is not a reply to our ForceReply, clear contexts
+    elif not message.reply_to_message_id:
+        if hasattr(FireflyParserBot, '_add_alias_context'):
+            FireflyParserBot._add_alias_context = None
+        if hasattr(FireflyParserBot, '_edit_vendor_name_context'):
+            FireflyParserBot._edit_vendor_name_context = None
 
     db = VendorsDB()
     vendor = db.vendors.find_one({"_id": ObjectId(ctx["vendor_id"])})
@@ -622,6 +825,12 @@ async def update_aliases_view(callback_query_or_message, vendor):
 
 @FireflyParserBot.on_callback_query(filters.regex(r"^back_to_vendors"))
 async def back_to_vendors_callback(_, callback_query: CallbackQuery):
+    # Clear any existing reply contexts when returning to main vendors list
+    if hasattr(FireflyParserBot, '_add_alias_context'):
+        FireflyParserBot._add_alias_context = None
+    if hasattr(FireflyParserBot, '_edit_vendor_name_context'):
+        FireflyParserBot._edit_vendor_name_context = None
+        
     # Just show the vendors list with page 1 and no query
     # This is intentional to reset any search filtering when returning to the vendors list
     await send_vendors_list(callback_query, 1, "")

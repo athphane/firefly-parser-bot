@@ -4,6 +4,12 @@ from app import FireflyParserBot, TELEGRAM_ADMINS
 
 @FireflyParserBot.on_message(filters.private & filters.user(TELEGRAM_ADMINS) & filters.command(["help"]), group=1)
 async def help_command(_, message: Message):
+    # Clear any existing reply contexts
+    if hasattr(FireflyParserBot, '_add_alias_context'):
+        FireflyParserBot._add_alias_context = None
+    if hasattr(FireflyParserBot, '_edit_vendor_name_context'):
+        FireflyParserBot._edit_vendor_name_context = None
+        
     help_text = (
         "**Firefly Parser Bot Help**\n\n"
         "Type `/start` to see a welcome message.\n\n"
@@ -21,6 +27,12 @@ async def help_command(_, message: Message):
 
 @FireflyParserBot.on_message(filters.private & filters.user(TELEGRAM_ADMINS) & filters.command(["foreignsum_help"]), group=1)
 async def foreignsum_help_command(_, message: Message):
+    # Clear any existing reply contexts
+    if hasattr(FireflyParserBot, '_add_alias_context'):
+        FireflyParserBot._add_alias_context = None
+    if hasattr(FireflyParserBot, '_edit_vendor_name_context'):
+        FireflyParserBot._edit_vendor_name_context = None
+        
     help_text = (
         "**/foreignsum Command Usage**\n\n"
         "This command summarizes your foreign transactions.\n\n"
