@@ -1,6 +1,7 @@
 from datetime import datetime
 from typing import Union
 import logging
+import os
 
 from app import FIREFLY_DEFAULT_ACCOUNT_ID
 from app.database.vendorsdb import VendorsDB
@@ -173,7 +174,7 @@ class ParsedTransactionMessage:
 
         return None
 
-    def create_transaction_on_firefly(self, is_receipt: bool = False):
+    def create_transaction_on_firefly(self, is_receipt: bool = False, image_path: str = None):
         destination_account = self.get_similar_account(default_name=True)
         # Only use system tags
         tags = ['powered-by-groq']
@@ -204,4 +205,34 @@ class ParsedTransactionMessage:
             "error_if_duplicate_hash":  False
         }
         response = FireflyApi().post_json('transactions', payload=payload, debug=True)
+        
+        # If we have an image and the transaction was created successfully, attach the image
+        if image_path and response.status_code in (200, 201):
+            try:
+                transaction_id = response.json()['data']['id']
+                self._attach_image_to_transaction(transaction_id, image_path)
+            except Exception as e:
+                LOGS.error(f"Failed to attach image to transaction: {e}")
+        
         return response
+
+    def _attach_image_to_transaction(self, transaction_id: str, image_path: str):
+        """
+        Attach an image to a transaction in Firefly.
+        :param transaction_id: The ID of the transaction to attach the image to.
+        :param image_path: The path to the image file to attach.
+        """
+        if not os.path.exists(image_path):
+            raise FileNotFoundError(f"Image file not found: {image_path}")
+        
+        # Get the filename from the path
+        filename = os.path.basename(image_path)
+        
+        # Create the attachment object
+        attachment_response = FireflyApi().create_attachment(transaction_id, filename)
+        attachment_id = attachment_response['data']['id']
+        
+        # Upload the actual file
+        FireflyApi().upload_attachment_file(attachment_id, image_path)
+        
+        LOGS.info(f"Successfully attached image {filename} to transaction {transaction_id}")

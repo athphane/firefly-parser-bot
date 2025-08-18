@@ -101,7 +101,7 @@ async def incoming_transfer_receipt(_, message: Message):
         reference_no=json_decoded['reference_no']
     )
 
-    response = parsed_transaction_message.create_transaction_on_firefly(is_receipt=True)
+    response = parsed_transaction_message.create_transaction_on_firefly(is_receipt=True, image_path=path)
 
 
     # Prepare a concise reply with transaction details and a button link using Pyrogram's InlineKeyboardMarkup

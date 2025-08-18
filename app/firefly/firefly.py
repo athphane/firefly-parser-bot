@@ -1,4 +1,5 @@
 import requests
+import os
 
 from app import FIREFLY_BASE_URL, FIREFLY_API_KEY
 from app.models.transaction_models import Budget, Category
@@ -92,6 +93,51 @@ class FireflyApi:
             return response.json() if response.status_code == 200 else {"message": "Request successful"}
         else:
             raise Exception(f"PUT request failed: {response.status_code} - {response.text}")
+
+    def post_file(self, endpoint: str, file_path: str):
+        """
+        Send a POST request with a file to the Firefly API.
+        :param endpoint: API endpoint
+        :param file_path: Path to the file to upload
+        :return: Response JSON or raises an exception on failure.
+        """
+        url = self.construct_url(endpoint)
+        headers = {
+            'Authorization': f'Bearer {self.api_key}'
+        }
+        
+        with open(file_path, 'rb') as file:
+            files = {'file': file}
+            response = requests.post(url, headers=headers, files=files)
+
+        if response.status_code in (200, 201, 204):
+            return response.json() if response.status_code in (200, 201) else {"message": "Request successful"}
+        else:
+            raise Exception(f"POST file request failed: {response.status_code} - {response.text}")
+
+    def create_attachment(self, transaction_id: str, filename: str):
+        """
+        Create an attachment object for a transaction.
+        :param transaction_id: The ID of the transaction to attach the file to.
+        :param filename: The name of the file to attach.
+        :return: Response JSON with the created attachment details.
+        """
+        payload = {
+            "filename": filename,
+            "attachable_type": "Transaction",
+            "attachable_id": transaction_id
+        }
+        return self.post_json('attachments', payload)
+
+    def upload_attachment_file(self, attachment_id: str, file_path: str):
+        """
+        Upload the actual file content for an attachment.
+        :param attachment_id: The ID of the attachment.
+        :param file_path: The path to the file to upload.
+        :return: Response JSON or raises an exception on failure.
+        """
+        endpoint = f"attachments/{attachment_id}/upload"
+        return self.post_file(endpoint, file_path)
 
     def about(self):
         """
