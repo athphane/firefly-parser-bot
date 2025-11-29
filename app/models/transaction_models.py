@@ -9,3 +9,9 @@ class Budget:
 class Category:
     id: str
     name: str
+
+
+@dataclass
+class Account:
+    id: str
+    name: str
