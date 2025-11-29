@@ -284,10 +284,13 @@ class FireflyApi:
         accounts_data = self.accounts(account_type='asset', get_all=True)
         asset_accounts = []
         for account in accounts_data:
-            asset_accounts.append(Account(
-                id=account['id'],
-                name=account['attributes']['name']
-            ))
+            try:
+                asset_accounts.append(Account(
+                    id=account['id'],
+                    name=account['attributes']['name']
+                ))
+            except KeyError:
+                continue
         return asset_accounts
 
     def update_transaction(self, transaction_id: str, payload: dict):
