@@ -2,7 +2,7 @@ import requests
 import os
 
 from app import FIREFLY_BASE_URL, FIREFLY_API_KEY
-from app.models.transaction_models import Budget, Category
+from app.models.transaction_models import Account, Budget, Category
 
 
 class FireflyApi:
@@ -275,6 +275,20 @@ class FireflyApi:
                 name=category['attributes']['name']
             ))
         return categories
+
+    def get_asset_accounts(self) -> list[Account]:
+        """
+        Get all asset accounts
+        :return: List of Account objects
+        """
+        accounts_data = self.accounts(account_type='asset', get_all=True)
+        asset_accounts = []
+        for account in accounts_data:
+            asset_accounts.append(Account(
+                id=account['id'],
+                name=account['attributes']['name']
+            ))
+        return asset_accounts
 
     def update_transaction(self, transaction_id: str, payload: dict):
         """

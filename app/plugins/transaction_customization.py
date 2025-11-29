@@ -4,13 +4,14 @@ from app import FireflyParserBot, TELEGRAM_ADMINS
 from app.firefly.firefly import FireflyApi
 import logging
 
-from app.models.transaction_models import Budget, Category
+from app.models.transaction_models import Account, Budget, Category
 
 LOGS = logging.getLogger(__name__)
 
 # Callback data prefixes
 BUDGET_CALLBACK_PREFIX = "set_budget_"
 CATEGORY_CALLBACK_PREFIX = "set_category_"
+SOURCE_ACCOUNT_CALLBACK_PREFIX = "set_source_"
 TRANSACTION_ID_PREFIX = "trans_id_"
 BACK_BUTTON_PREFIX = "back_to_main_"
 CANCEL_BUTTON_PREFIX = "cancel_customization_"
@@ -26,6 +27,7 @@ async def handle_transaction_customization_callback(client: FireflyParserBot, ca
     markup = InlineKeyboardMarkup([
         [InlineKeyboardButton("Set Budget", callback_data=f"{BUDGET_CALLBACK_PREFIX}{transaction_id}")],
         [InlineKeyboardButton("Set Category", callback_data=f"{CATEGORY_CALLBACK_PREFIX}{transaction_id}")],
+        [InlineKeyboardButton("Set Source Account", callback_data=f"{SOURCE_ACCOUNT_CALLBACK_PREFIX}{transaction_id}")],
         [InlineKeyboardButton("Cancel", callback_data=f"{CANCEL_BUTTON_PREFIX}{transaction_id}")]
     ])
     await client.send_message(
@@ -91,6 +93,37 @@ async def handle_set_category_callback(client: FireflyParserBot, callback_query:
         await callback_query.edit_message_text("Failed to fetch categories. Please try again later.")
 
 
+source_account_filter = filters.regex(f"^{SOURCE_ACCOUNT_CALLBACK_PREFIX}.*") & filters.user(TELEGRAM_ADMINS)
+
+
+@FireflyParserBot.on_callback_query(source_account_filter)
+async def handle_set_source_account_callback(client: FireflyParserBot, callback_query: CallbackQuery):
+    await callback_query.answer()
+    transaction_id = callback_query.data.replace(SOURCE_ACCOUNT_CALLBACK_PREFIX, "")
+    firefly_api = FireflyApi()
+
+    try:
+        accounts = firefly_api.get_asset_accounts()
+        if not accounts:
+            await callback_query.edit_message_text("No asset accounts found in Firefly III.")
+            return
+
+        buttons = []
+        for account in accounts:
+            buttons.append([InlineKeyboardButton(
+                account.name,
+                callback_data=f"update_trans_source_{transaction_id}_{account.id}"
+            )])
+        buttons.append([InlineKeyboardButton("<< Back", callback_data=f"{BACK_BUTTON_PREFIX}{transaction_id}")])
+
+        markup = InlineKeyboardMarkup(buttons)
+        await callback_query.edit_message_text("Select a source account:", reply_markup=markup)
+
+    except Exception as e:
+        LOGS.error(f"Error fetching asset accounts: {e}")
+        await callback_query.edit_message_text("Failed to fetch accounts. Please try again later.")
+
+
 @FireflyParserBot.on_callback_query(filters.regex("^update_trans_budget_.*") & filters.user(TELEGRAM_ADMINS))
 async def update_transaction_budget(client: FireflyParserBot, callback_query: CallbackQuery):
     await callback_query.answer("Updating budget...")
@@ -139,6 +172,30 @@ async def update_transaction_category(client: FireflyParserBot, callback_query: 
         await callback_query.edit_message_text("Failed to update category. Please try again.")
 
 
+@FireflyParserBot.on_callback_query(filters.regex("^update_trans_source_.*") & filters.user(TELEGRAM_ADMINS))
+async def update_transaction_source_account(client: FireflyParserBot, callback_query: CallbackQuery):
+    await callback_query.answer("Updating source account...")
+    parts = callback_query.data.split("_")
+    transaction_id = parts[3]
+    account_id = parts[4]
+
+    firefly_api = FireflyApi()
+    payload = {
+        "transactions": [
+            {
+                "source_id": account_id
+            }
+        ]
+    }
+    try:
+        firefly_api.update_transaction(transaction_id, payload)
+        await callback_query.message.delete()
+        await client.send_message(chat_id=callback_query.message.chat.id, text="Source account updated successfully!")
+    except Exception as e:
+        LOGS.error(f"Error updating source account for transaction {transaction_id}: {e}")
+        await callback_query.edit_message_text("Failed to update source account. Please try again.")
+
+
 @FireflyParserBot.on_callback_query(filters.regex(f"^{BACK_BUTTON_PREFIX}.*") & filters.user(TELEGRAM_ADMINS))
 async def back_to_main_menu(client: FireflyParserBot, callback_query: CallbackQuery):
     await callback_query.answer()
@@ -146,6 +203,7 @@ async def back_to_main_menu(client: FireflyParserBot, callback_query: CallbackQu
     markup = InlineKeyboardMarkup([
         [InlineKeyboardButton("Set Budget", callback_data=f"{BUDGET_CALLBACK_PREFIX}{transaction_id}")],
         [InlineKeyboardButton("Set Category", callback_data=f"{CATEGORY_CALLBACK_PREFIX}{transaction_id}")],
+        [InlineKeyboardButton("Set Source Account", callback_data=f"{SOURCE_ACCOUNT_CALLBACK_PREFIX}{transaction_id}")],
         [InlineKeyboardButton("Cancel", callback_data=f"{CANCEL_BUTTON_PREFIX}{transaction_id}")]
     ])
     await callback_query.message.edit_text(
