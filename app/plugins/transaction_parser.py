@@ -68,7 +68,7 @@ async def incoming_transaction_message(_, message: Message):
             [InlineKeyboardButton("Customize Transaction", callback_data=f"{TRANSACTION_ID_PREFIX}{transaction_id}")]
         ])
         
-        await message.reply(details, reply_markup=markup)
+        await message.reply(details, reply_markup=markup, reply_to_message_id=None)
         return
     except Exception as e:
         details = f"Transaction created, but could not parse details. Error: {e}"

@@ -5,6 +5,7 @@ services:
     environment:
       MONGO_INITDB_ROOT_USERNAME: admin
       MONGO_INITDB_ROOT_PASSWORD: password
+      MONGODB_SYSTEM_LOG_VERBOSITY: 0
     restart: always
     networks:
       - firefly-network
@@ -24,6 +25,8 @@ services:
     restart: always
     networks:
       - firefly-network
+    labels:
+      - "com.centurylinklabs.watchtower.enable=false"
 
 networks:
   firefly-network:

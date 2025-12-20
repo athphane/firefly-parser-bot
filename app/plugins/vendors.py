@@ -15,14 +15,26 @@ VENDORS_PER_PAGE = 9  # Maximum vendors per page (3x3 grid)
 VENDORS_PER_ROW = 3    # Number of vendors per row
 
 
+async def clear_vendor_contexts(message: Message):
+    """
+    Clear any existing reply contexts and attempt to delete the ForceReply messages.
+    """
+    for attr in ['_add_alias_context', '_edit_vendor_name_context']:
+        if hasattr(FireflyParserBot, attr):
+            ctx = getattr(FireflyParserBot, attr)
+            if ctx and "reply_message_id" in ctx:
+                try:
+                    await message.chat.delete_messages(ctx["reply_message_id"])
+                except Exception:
+                    pass
+            setattr(FireflyParserBot, attr, None)
+
+
 @FireflyParserBot.on_message(filters.private & filters.user(TELEGRAM_ADMINS) & filters.command(["vendors"]), group=1)
 async def list_vendors(_, message: Message):
     await message.reply_chat_action(ChatAction.TYPING)
-    # Clear any existing reply contexts
-    if hasattr(FireflyParserBot, '_add_alias_context'):
-        FireflyParserBot._add_alias_context = None
-    if hasattr(FireflyParserBot, '_edit_vendor_name_context'):
-        FireflyParserBot._edit_vendor_name_context = None
+    # Clear any existing reply contexts and delete ForceReply messages
+    await clear_vendor_contexts(message)
         
     # Extract query from the command (everything after /vendors)
     query = message.text.split(maxsplit=1)[1] if len(message.text.split(maxsplit=1)) > 1 else ""
@@ -156,11 +168,8 @@ async def vendors_page_callback(_, callback_query: CallbackQuery):
 @FireflyParserBot.on_message(filters.private & filters.user(TELEGRAM_ADMINS) & filters.command(["syncvendors"]),
                              group=1)
 async def sync_vendors(_, message: Message):
-    # Clear any existing reply contexts
-    if hasattr(FireflyParserBot, '_add_alias_context'):
-        FireflyParserBot._add_alias_context = None
-    if hasattr(FireflyParserBot, '_edit_vendor_name_context'):
-        FireflyParserBot._edit_vendor_name_context = None
+    # Clear any existing reply contexts and delete ForceReply messages
+    await clear_vendor_contexts(message)
         
     await message.reply("Syncing vendors. Please wait...")
     await message.reply_chat_action(ChatAction.TYPING)
@@ -406,6 +415,8 @@ def is_reply_to_forcereply(message: Message, context_type: str) -> bool:
     return ctx.get("reply_message_id") == message.reply_to_message_id
 
 
+
+
 @FireflyParserBot.on_message(filters.private & filters.user(TELEGRAM_ADMINS), group=2)
 async def handle_add_alias_reply(_, message: Message):
     # Check if this is a reply to our ForceReply for adding aliases
@@ -463,12 +474,10 @@ async def handle_add_alias_reply(_, message: Message):
             
             FireflyParserBot._add_alias_context = None
             await message.stop_propagation()
-    # If this is not a reply to our ForceReply, clear contexts
+    # If this is not a reply to our ForceReply, clear contexts and continue
     elif not message.reply_to_message_id:
-        if hasattr(FireflyParserBot, '_add_alias_context'):
-            FireflyParserBot._add_alias_context = None
-        if hasattr(FireflyParserBot, '_edit_vendor_name_context'):
-            FireflyParserBot._edit_vendor_name_context = None
+        await clear_vendor_contexts(message)
+        await message.continue_propagation()
     # If this message is a reply but not to our ForceReply, let it propagate to other handlers
     else:
         await message.continue_propagation()
@@ -622,12 +631,13 @@ async def handle_edit_vendor_name_reply(_, message: Message):
             FireflyParserBot._edit_vendor_name_context = None
             await message.stop_propagation()
     
-    # If this is not a reply to our ForceReply, clear contexts
+    # If this is not a reply to our ForceReply, clear contexts and continue
     elif not message.reply_to_message_id:
-        if hasattr(FireflyParserBot, '_add_alias_context'):
-            FireflyParserBot._add_alias_context = None
-        if hasattr(FireflyParserBot, '_edit_vendor_name_context'):
-            FireflyParserBot._edit_vendor_name_context = None
+        await clear_vendor_contexts(message)
+        await message.continue_propagation()
+    # If this message is a reply but not to our ForceReply, let it propagate to other handlers
+    else:
+        await message.continue_propagation()
 
 
 async def update_aliases_view(callback_query_or_message, vendor):
@@ -677,10 +687,7 @@ async def update_aliases_view(callback_query_or_message, vendor):
 @FireflyParserBot.on_callback_query(filters.regex(r"^back_to_vendors"))
 async def back_to_vendors_callback(_, callback_query: CallbackQuery):
     # Clear any existing reply contexts when returning to main vendors list
-    if hasattr(FireflyParserBot, '_add_alias_context'):
-        FireflyParserBot._add_alias_context = None
-    if hasattr(FireflyParserBot, '_edit_vendor_name_context'):
-        FireflyParserBot._edit_vendor_name_context = None
+    await clear_vendor_contexts(callback_query.message)
         
     # Just show the vendors list with page 1 and no query
     # This is intentional to reset any search filtering when returning to the vendors list
