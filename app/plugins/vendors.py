@@ -1,6 +1,6 @@
 from bson import ObjectId
 from pyrogram import filters
-from pyrogram.enums import ChatAction
+from pyrogram.enums import ChatAction, ButtonStyle
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, ForceReply
 import logging
 
@@ -98,7 +98,8 @@ async def send_vendors_list(message_or_callback, page: int, query: str):
         # Create button with just the index number
         button = InlineKeyboardButton(
             f"{idx}",
-            callback_data=f"view_vendor:{vendor['_id']}"
+            callback_data=f"view_vendor:{vendor['_id']}",
+            style=ButtonStyle.PRIMARY
         )
         
         current_row.append(button)
@@ -118,19 +119,19 @@ async def send_vendors_list(message_or_callback, page: int, query: str):
     
     # Previous button (disabled if on first page)
     if page > 1:
-        nav_buttons.append(InlineKeyboardButton("⬅️ Prev", callback_data=f"vendors_page:{page - 1}:{query}"))
+        nav_buttons.append(InlineKeyboardButton("⬅️ Prev", callback_data=f"vendors_page:{page - 1}:{query}", style=ButtonStyle.DEFAULT))
     else:
-        nav_buttons.append(InlineKeyboardButton("•", callback_data="noop"))
+        nav_buttons.append(InlineKeyboardButton("•", callback_data="noop", style=ButtonStyle.DEFAULT))
     
     # Page indicator as a separator
     page_indicator = f"{page}/{max_page}"
-    nav_buttons.append(InlineKeyboardButton(page_indicator, callback_data="noop"))
+    nav_buttons.append(InlineKeyboardButton(page_indicator, callback_data="noop", style=ButtonStyle.DEFAULT))
     
     # Next button (disabled if on last page)
     if page < max_page:
-        nav_buttons.append(InlineKeyboardButton("Next ➡️", callback_data=f"vendors_page:{page + 1}:{query}"))
+        nav_buttons.append(InlineKeyboardButton("Next ➡️", callback_data=f"vendors_page:{page + 1}:{query}", style=ButtonStyle.DEFAULT))
     else:
-        nav_buttons.append(InlineKeyboardButton("•", callback_data="noop"))
+        nav_buttons.append(InlineKeyboardButton("•", callback_data="noop", style=ButtonStyle.DEFAULT))
     
     # Add navigation row
     buttons.append(nav_buttons)
@@ -306,21 +307,21 @@ async def view_vendor_callback(_, callback_query: CallbackQuery):
     
     buttons = [
         [
-            InlineKeyboardButton("✏️ Edit Name", callback_data=f"edit_vendor_name:{vendor_id}"),
+            InlineKeyboardButton("✏️ Edit Name", callback_data=f"edit_vendor_name:{vendor_id}", style=ButtonStyle.PRIMARY),
         ],
         [
-            InlineKeyboardButton("🔗 Manage Aliases", callback_data=f"manage_aliases:{vendor_id}")
+            InlineKeyboardButton("🔗 Manage Aliases", callback_data=f"manage_aliases:{vendor_id}", style=ButtonStyle.PRIMARY)
         ]
     ]
     
     # Add a button to edit the vendor in Firefly III if we have a valid URL
     if firefly_edit_url:
         buttons.append([
-            InlineKeyboardButton("🔧 Edit in Firefly", url=firefly_edit_url)
+            InlineKeyboardButton("🔧 Edit in Firefly", url=firefly_edit_url, style=ButtonStyle.PRIMARY)
         ])
     
     buttons.append([
-        InlineKeyboardButton("🔙 Back to Vendors", callback_data="back_to_vendors")
+        InlineKeyboardButton("🔙 Back to Vendors", callback_data="back_to_vendors", style=ButtonStyle.DEFAULT)
     ])
 
     markup = InlineKeyboardMarkup(buttons)
@@ -600,21 +601,21 @@ async def handle_edit_vendor_name_reply(_, message: Message):
                     
                     buttons = [
                         [
-                            InlineKeyboardButton("✏️ Edit Name", callback_data=f"edit_vendor_name:{ctx['vendor_id']}"),
+                            InlineKeyboardButton("✏️ Edit Name", callback_data=f"edit_vendor_name:{ctx['vendor_id']}", style=ButtonStyle.PRIMARY),
                         ],
                         [
-                            InlineKeyboardButton("🔗 Manage Aliases", callback_data=f"manage_aliases:{ctx['vendor_id']}")
+                            InlineKeyboardButton("🔗 Manage Aliases", callback_data=f"manage_aliases:{ctx['vendor_id']}", style=ButtonStyle.PRIMARY)
                         ]
                     ]
                     
                     # Add a button to edit the vendor in Firefly III if we have a valid URL
                     if firefly_edit_url:
                         buttons.append([
-                            InlineKeyboardButton("🔧 Edit in Firefly", url=firefly_edit_url)
+                            InlineKeyboardButton("🔧 Edit in Firefly", url=firefly_edit_url, style=ButtonStyle.PRIMARY)
                         ])
                         
                     buttons.append([
-                        InlineKeyboardButton("🔙 Back to Vendors", callback_data="back_to_vendors")
+                        InlineKeyboardButton("🔙 Back to Vendors", callback_data="back_to_vendors", style=ButtonStyle.DEFAULT)
                     ])
 
                     markup = InlineKeyboardMarkup(buttons)
@@ -659,18 +660,18 @@ async def update_aliases_view(callback_query_or_message, vendor):
 
     buttons = [
         [
-            InlineKeyboardButton("➕ Add Alias", callback_data=f"add_alias:{vendor_id}")
+            InlineKeyboardButton("➕ Add Alias", callback_data=f"add_alias:{vendor_id}", style=ButtonStyle.SUCCESS)
         ]
     ]
 
     for i, alias in enumerate(aliases):
         buttons.append([
-            InlineKeyboardButton(f"❌ Delete '{alias}'", callback_data=f"delete_alias:{vendor_id}:{i}")
+            InlineKeyboardButton(f"❌ Delete '{alias}'", callback_data=f"delete_alias:{vendor_id}:{i}", style=ButtonStyle.DANGER)
         ])
         
     # Add a back button
     buttons.append([
-        InlineKeyboardButton("🔙 Back to Vendor", callback_data=f"view_vendor:{vendor_id}")
+        InlineKeyboardButton("🔙 Back to Vendor", callback_data=f"view_vendor:{vendor_id}", style=ButtonStyle.DEFAULT)
     ])
 
     markup = InlineKeyboardMarkup(buttons)

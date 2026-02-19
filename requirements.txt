@@ -1,5 +1,5 @@
-pyrofork
-tgcrypto-pyrofork
+pyrotgfork
+tgcrypto
 pymongo
 requests
 groq

@@ -2,7 +2,7 @@ from pyrogram import filters
 from app.firefly.firefly import FireflyApi
 import logging
 
-from pyrogram.enums import ChatAction
+from pyrogram.enums import ChatAction, ButtonStyle
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 from app import FireflyParserBot, TELEGRAM_ADMINS
 from app.models.parsed_transaction_message import ParsedTransactionMessage
@@ -19,6 +19,8 @@ def clear_reply_contexts():
         FireflyParserBot._add_alias_context = None
     if hasattr(FireflyParserBot, '_edit_vendor_name_context'):
         FireflyParserBot._edit_vendor_name_context = None
+    if hasattr(FireflyParserBot, '_add_tag_context'):
+        FireflyParserBot._add_tag_context = None
 
 
 @FireflyParserBot.on_message(filters.private & filters.text & filters.user(TELEGRAM_ADMINS), group=100)
@@ -64,8 +66,8 @@ async def incoming_transaction_message(_, message: Message):
         )
         
         markup = InlineKeyboardMarkup([
-            [InlineKeyboardButton("View in Firefly", url=link)],
-            [InlineKeyboardButton("Customize Transaction", callback_data=f"{TRANSACTION_ID_PREFIX}{transaction_id}")]
+            [InlineKeyboardButton("View in Firefly", url=link, style=ButtonStyle.PRIMARY)],
+            [InlineKeyboardButton("Customize Transaction", callback_data=f"{TRANSACTION_ID_PREFIX}{transaction_id}", style=ButtonStyle.SUCCESS)]
         ])
         
         await message.reply(details, reply_markup=markup, reply_to_message_id=None)
@@ -120,8 +122,8 @@ async def incoming_transfer_receipt(_, message: Message):
         )
         
         markup = InlineKeyboardMarkup([
-            [InlineKeyboardButton("View in Firefly", url=link)],
-            [InlineKeyboardButton("Customize Transaction", callback_data=f"{TRANSACTION_ID_PREFIX}{transaction_id}")]
+            [InlineKeyboardButton("View in Firefly", url=link, style=ButtonStyle.PRIMARY)],
+            [InlineKeyboardButton("Customize Transaction", callback_data=f"{TRANSACTION_ID_PREFIX}{transaction_id}", style=ButtonStyle.SUCCESS)]
         ])
         
         await message.reply(details, reply_markup=markup)
