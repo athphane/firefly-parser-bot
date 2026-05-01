@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+*.egg-info/
+dist/
+build/
+
+# Pyrogram
+*.session
+*.session-journal
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.qwen/
+
+# Logs
+logs/*.log
+logs/*.log.*
+
+# Config
+config.ini
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+
+# Docker volumes (if mounted locally)
+workdir/*
+downloads/*
+!workdir/.gitkeep
+!downloads/.gitkeep
