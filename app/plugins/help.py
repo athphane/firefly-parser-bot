@@ -14,6 +14,7 @@ async def help_command(_, message: Message):
         "**Firefly Parser Bot Help**\n\n"
         "Type `/start` to see a welcome message.\n\n"
         "**Available Commands:**\n"
+        "• `/income` - Record an incoming money transaction.\n"
         "• `/foreignsum` - Show foreign transaction summary.\n"
         "• `/foreignsum_help` - Show usage instructions for `/foreignsum`.\n"
         "\n**Vendor Commands:**\n"

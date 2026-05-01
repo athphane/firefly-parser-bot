@@ -33,6 +33,7 @@ class FireflyParserBot(Client):
         for chat in app.TELEGRAM_ADMINS:
             await self.set_bot_commands(
                 [
+                    BotCommand('income', 'Record incoming money'),
                     BotCommand('vendors', 'List all vendors'),
                     BotCommand('start', 'Start the bot'),
                     BotCommand('help', 'Show help message'),

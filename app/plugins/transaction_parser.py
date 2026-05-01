@@ -21,6 +21,8 @@ def clear_reply_contexts():
         FireflyParserBot._edit_vendor_name_context = None
     if hasattr(FireflyParserBot, '_add_tag_context'):
         FireflyParserBot._add_tag_context = None
+    if hasattr(FireflyParserBot, '_incoming_money_contexts'):
+        FireflyParserBot._incoming_money_contexts = {}
 
 
 @FireflyParserBot.on_message(filters.private & filters.text & filters.user(TELEGRAM_ADMINS), group=100)

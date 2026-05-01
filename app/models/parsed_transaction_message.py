@@ -148,7 +148,7 @@ class ParsedTransactionMessage:
             if description not in unique_descriptions:
                 unique_descriptions.append(description)
 
-        if len(unique_descriptions) > 1:
+        if len(unique_descriptions) > 0:
             return unique_descriptions[0]
         else:
             return 'ADD DESCRIPTION TO THIS TRANSACTION'

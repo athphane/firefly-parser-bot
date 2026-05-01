@@ -15,3 +15,8 @@ class Category:
 class Account:
     id: str
     name: str
+
+@dataclass
+class Bill:
+    id: str
+    name: str

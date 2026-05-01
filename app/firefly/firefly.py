@@ -2,7 +2,7 @@ import requests
 import os
 
 from app import FIREFLY_BASE_URL, FIREFLY_API_KEY
-from app.models.transaction_models import Account, Budget, Category
+from app.models.transaction_models import Account, Budget, Category, Bill
 
 
 class FireflyApi:
@@ -276,6 +276,20 @@ class FireflyApi:
             ))
         return categories
 
+    def get_bills(self) -> list[Bill]:
+        """
+        Get all bills
+        :return: JSON data
+        """
+        response = self.get_json('bills')
+        bills = []
+        for bill in response['data']:
+            bills.append(Bill(
+                id=bill['id'],
+                name=bill['attributes']['name']
+            ))
+        return bills
+
     def get_asset_accounts(self) -> list[Account]:
         """
         Get all asset accounts
@@ -292,6 +306,62 @@ class FireflyApi:
             except KeyError:
                 continue
         return asset_accounts
+
+    def get_revenue_accounts(self) -> list[Account]:
+        """
+        Get all revenue accounts
+        :return: List of Account objects
+        """
+        accounts_data = self.accounts(account_type='revenue', get_all=True)
+        revenue_accounts = []
+        for account in accounts_data:
+            try:
+                revenue_accounts.append(Account(
+                    id=account['id'],
+                    name=account['attributes']['name']
+                ))
+            except KeyError:
+                continue
+        return revenue_accounts
+
+    def create_incoming_transaction(
+            self,
+            revenue_account_id: str,
+            asset_account_id: str,
+            amount: str,
+            description: str,
+            date: str
+    ) -> dict:
+        """
+        Create an incoming money transaction.
+
+        Args:
+            revenue_account_id: Firefly revenue account ID to use as source.
+            asset_account_id: Firefly asset account ID to use as destination.
+            amount: Amount being received.
+            description: Short transaction description.
+            date: ISO formatted transaction date.
+
+        Returns:
+            Firefly API response JSON.
+        """
+        payload = {
+            "transactions": [
+                {
+                    "type": "deposit",
+                    "date": date,
+                    "amount": amount,
+                    "description": description,
+                    "source_id": revenue_account_id,
+                    "destination_id": asset_account_id
+                }
+            ],
+            "apply_rules": True,
+            "fire_webhooks": False,
+            "error_if_duplicate_hash": False
+        }
+
+        return self.post_json('transactions', payload=payload)
 
     def update_transaction(self, transaction_id: str, payload: dict):
         """
