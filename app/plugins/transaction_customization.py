@@ -18,6 +18,33 @@ BILL_CALLBACK_PREFIX = "set_bill_"
 TRANSACTION_ID_PREFIX = "trans_id_"
 BACK_BUTTON_PREFIX = "back_to_main_"
 CANCEL_BUTTON_PREFIX = "cancel_customization_"
+SPLIT_AMOUNT_CALLBACK_PREFIX = "split_amount_"
+UPDATE_AMOUNT_CALLBACK_PREFIX = "update_amount_"
+
+
+def get_main_menu_markup(transaction_id: str, link: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("View in Firefly", url=link, style=ButtonStyle.PRIMARY)],
+        [InlineKeyboardButton("Set Budget", callback_data=f"{BUDGET_CALLBACK_PREFIX}{transaction_id}", style=ButtonStyle.PRIMARY)],
+        [InlineKeyboardButton("Set Category", callback_data=f"{CATEGORY_CALLBACK_PREFIX}{transaction_id}", style=ButtonStyle.PRIMARY)],
+        [InlineKeyboardButton("Set Source Account", callback_data=f"{SOURCE_ACCOUNT_CALLBACK_PREFIX}{transaction_id}", style=ButtonStyle.PRIMARY)],
+        [InlineKeyboardButton("Link to Bill", callback_data=f"{BILL_CALLBACK_PREFIX}{transaction_id}", style=ButtonStyle.PRIMARY)],
+        [InlineKeyboardButton("Manage Tags", callback_data=f"{TAGS_CALLBACK_PREFIX}{transaction_id}", style=ButtonStyle.PRIMARY)],
+        [InlineKeyboardButton("Split in Half", callback_data=f"{SPLIT_AMOUNT_CALLBACK_PREFIX}{transaction_id}", style=ButtonStyle.PRIMARY)],
+        [InlineKeyboardButton("Update Amount", callback_data=f"{UPDATE_AMOUNT_CALLBACK_PREFIX}{transaction_id}", style=ButtonStyle.PRIMARY)],
+        [InlineKeyboardButton("Cancel", callback_data=f"{CANCEL_BUTTON_PREFIX}{transaction_id}", style=ButtonStyle.DANGER)]
+    ])
+
+
+async def clear_amount_contexts(message: Message):
+    if hasattr(FireflyParserBot, '_update_amount_context'):
+        ctx = getattr(FireflyParserBot, '_update_amount_context')
+        if ctx and "reply_message_id" in ctx:
+            try:
+                await message.chat.delete_messages(ctx["reply_message_id"])
+            except Exception:
+                pass
+        FireflyParserBot._update_amount_context = None
 
 
 async def get_transaction_details_text(firefly_api, transaction_id: str) -> str:
@@ -97,15 +124,7 @@ async def handle_transaction_customization_callback(client: FireflyParserBot, ca
     # Add Firefly link button
     link = firefly_api.transaction_show_url(transaction_id)
     
-    markup = InlineKeyboardMarkup([
-        [InlineKeyboardButton("View in Firefly", url=link, style=ButtonStyle.PRIMARY)],
-        [InlineKeyboardButton("Set Budget", callback_data=f"{BUDGET_CALLBACK_PREFIX}{transaction_id}", style=ButtonStyle.PRIMARY)],
-        [InlineKeyboardButton("Set Category", callback_data=f"{CATEGORY_CALLBACK_PREFIX}{transaction_id}", style=ButtonStyle.PRIMARY)],
-        [InlineKeyboardButton("Set Source Account", callback_data=f"{SOURCE_ACCOUNT_CALLBACK_PREFIX}{transaction_id}", style=ButtonStyle.PRIMARY)],
-        [InlineKeyboardButton("Link to Bill", callback_data=f"{BILL_CALLBACK_PREFIX}{transaction_id}", style=ButtonStyle.PRIMARY)],
-        [InlineKeyboardButton("Manage Tags", callback_data=f"{TAGS_CALLBACK_PREFIX}{transaction_id}", style=ButtonStyle.PRIMARY)],
-        [InlineKeyboardButton("❌ Cancel", callback_data=f"{CANCEL_BUTTON_PREFIX}{transaction_id}", style=ButtonStyle.DANGER)]
-    ])
+    markup = get_main_menu_markup(transaction_id, link)
     
     text = f"{transaction_details}\n\n**What would you like to customize?**"
     
@@ -289,19 +308,10 @@ async def update_transaction_budget(client: FireflyParserBot, callback_query: Ca
     try:
         firefly_api.update_transaction(transaction_id, payload)
 
-        # Edit the message back to show updated transaction details
         transaction_details = await get_transaction_details_text(firefly_api, transaction_id)
         link = firefly_api.transaction_show_url(transaction_id)
 
-        markup = InlineKeyboardMarkup([
-            [InlineKeyboardButton("View in Firefly", url=link, style=ButtonStyle.PRIMARY)],
-            [InlineKeyboardButton("Set Budget", callback_data=f"{BUDGET_CALLBACK_PREFIX}{transaction_id}", style=ButtonStyle.PRIMARY)],
-            [InlineKeyboardButton("Set Category", callback_data=f"{CATEGORY_CALLBACK_PREFIX}{transaction_id}", style=ButtonStyle.PRIMARY)],
-            [InlineKeyboardButton("Set Source Account", callback_data=f"{SOURCE_ACCOUNT_CALLBACK_PREFIX}{transaction_id}", style=ButtonStyle.PRIMARY)],
-            [InlineKeyboardButton("Link to Bill", callback_data=f"{BILL_CALLBACK_PREFIX}{transaction_id}", style=ButtonStyle.PRIMARY)],
-            [InlineKeyboardButton("Manage Tags", callback_data=f"{TAGS_CALLBACK_PREFIX}{transaction_id}", style=ButtonStyle.PRIMARY)],
-            [InlineKeyboardButton("Cancel", callback_data=f"{CANCEL_BUTTON_PREFIX}{transaction_id}", style=ButtonStyle.DANGER)]
-        ])
+        markup = get_main_menu_markup(transaction_id, link)
 
         text = f"{transaction_details}\n\n✅ **Budget updated successfully!**\n\n**What would you like to customize?**"
         await callback_query.message.edit_text(text, reply_markup=markup)
@@ -328,19 +338,10 @@ async def update_transaction_category(client: FireflyParserBot, callback_query: 
     try:
         firefly_api.update_transaction(transaction_id, payload)
 
-        # Edit the message back to show updated transaction details
         transaction_details = await get_transaction_details_text(firefly_api, transaction_id)
         link = firefly_api.transaction_show_url(transaction_id)
 
-        markup = InlineKeyboardMarkup([
-            [InlineKeyboardButton("View in Firefly", url=link, style=ButtonStyle.PRIMARY)],
-            [InlineKeyboardButton("Set Budget", callback_data=f"{BUDGET_CALLBACK_PREFIX}{transaction_id}", style=ButtonStyle.PRIMARY)],
-            [InlineKeyboardButton("Set Category", callback_data=f"{CATEGORY_CALLBACK_PREFIX}{transaction_id}", style=ButtonStyle.PRIMARY)],
-            [InlineKeyboardButton("Set Source Account", callback_data=f"{SOURCE_ACCOUNT_CALLBACK_PREFIX}{transaction_id}", style=ButtonStyle.PRIMARY)],
-            [InlineKeyboardButton("Link to Bill", callback_data=f"{BILL_CALLBACK_PREFIX}{transaction_id}", style=ButtonStyle.PRIMARY)],
-            [InlineKeyboardButton("Manage Tags", callback_data=f"{TAGS_CALLBACK_PREFIX}{transaction_id}", style=ButtonStyle.PRIMARY)],
-            [InlineKeyboardButton("Cancel", callback_data=f"{CANCEL_BUTTON_PREFIX}{transaction_id}", style=ButtonStyle.DANGER)]
-        ])
+        markup = get_main_menu_markup(transaction_id, link)
 
         text = f"{transaction_details}\n\n✅ **Category updated successfully!**\n\n**What would you like to customize?**"
         await callback_query.message.edit_text(text, reply_markup=markup)
@@ -367,19 +368,10 @@ async def update_transaction_source_account(client: FireflyParserBot, callback_q
     try:
         firefly_api.update_transaction(transaction_id, payload)
 
-        # Edit the message back to show updated transaction details
         transaction_details = await get_transaction_details_text(firefly_api, transaction_id)
         link = firefly_api.transaction_show_url(transaction_id)
 
-        markup = InlineKeyboardMarkup([
-            [InlineKeyboardButton("View in Firefly", url=link, style=ButtonStyle.PRIMARY)],
-            [InlineKeyboardButton("Set Budget", callback_data=f"{BUDGET_CALLBACK_PREFIX}{transaction_id}", style=ButtonStyle.PRIMARY)],
-            [InlineKeyboardButton("Set Category", callback_data=f"{CATEGORY_CALLBACK_PREFIX}{transaction_id}", style=ButtonStyle.PRIMARY)],
-            [InlineKeyboardButton("Set Source Account", callback_data=f"{SOURCE_ACCOUNT_CALLBACK_PREFIX}{transaction_id}", style=ButtonStyle.PRIMARY)],
-            [InlineKeyboardButton("Link to Bill", callback_data=f"{BILL_CALLBACK_PREFIX}{transaction_id}", style=ButtonStyle.PRIMARY)],
-            [InlineKeyboardButton("Manage Tags", callback_data=f"{TAGS_CALLBACK_PREFIX}{transaction_id}", style=ButtonStyle.PRIMARY)],
-            [InlineKeyboardButton("Cancel", callback_data=f"{CANCEL_BUTTON_PREFIX}{transaction_id}", style=ButtonStyle.DANGER)]
-        ])
+        markup = get_main_menu_markup(transaction_id, link)
 
         text = f"{transaction_details}\n\n✅ **Source account updated successfully!**\n\n**What would you like to customize?**"
         await callback_query.message.edit_text(text, reply_markup=markup)
@@ -406,19 +398,10 @@ async def update_transaction_bill(client: FireflyParserBot, callback_query: Call
     try:
         firefly_api.update_transaction(transaction_id, payload)
 
-        # Edit the message back to show updated transaction details
         transaction_details = await get_transaction_details_text(firefly_api, transaction_id)
         link = firefly_api.transaction_show_url(transaction_id)
 
-        markup = InlineKeyboardMarkup([
-            [InlineKeyboardButton("View in Firefly", url=link, style=ButtonStyle.PRIMARY)],
-            [InlineKeyboardButton("Set Budget", callback_data=f"{BUDGET_CALLBACK_PREFIX}{transaction_id}", style=ButtonStyle.PRIMARY)],
-            [InlineKeyboardButton("Set Category", callback_data=f"{CATEGORY_CALLBACK_PREFIX}{transaction_id}", style=ButtonStyle.PRIMARY)],
-            [InlineKeyboardButton("Set Source Account", callback_data=f"{SOURCE_ACCOUNT_CALLBACK_PREFIX}{transaction_id}", style=ButtonStyle.PRIMARY)],
-            [InlineKeyboardButton("Link to Bill", callback_data=f"{BILL_CALLBACK_PREFIX}{transaction_id}", style=ButtonStyle.PRIMARY)],
-            [InlineKeyboardButton("Manage Tags", callback_data=f"{TAGS_CALLBACK_PREFIX}{transaction_id}", style=ButtonStyle.PRIMARY)],
-            [InlineKeyboardButton("Cancel", callback_data=f"{CANCEL_BUTTON_PREFIX}{transaction_id}", style=ButtonStyle.DANGER)]
-        ])
+        markup = get_main_menu_markup(transaction_id, link)
 
         text = f"{transaction_details}\n\n✅ **Bill updated successfully!**\n\n**What would you like to customize?**"
         await callback_query.message.edit_text(text, reply_markup=markup)
@@ -444,19 +427,10 @@ async def unlink_transaction_bill(client: FireflyParserBot, callback_query: Call
     try:
         firefly_api.update_transaction(transaction_id, payload)
 
-        # Edit the message back to show updated transaction details
         transaction_details = await get_transaction_details_text(firefly_api, transaction_id)
         link = firefly_api.transaction_show_url(transaction_id)
 
-        markup = InlineKeyboardMarkup([
-            [InlineKeyboardButton("View in Firefly", url=link, style=ButtonStyle.PRIMARY)],
-            [InlineKeyboardButton("Set Budget", callback_data=f"{BUDGET_CALLBACK_PREFIX}{transaction_id}", style=ButtonStyle.PRIMARY)],
-            [InlineKeyboardButton("Set Category", callback_data=f"{CATEGORY_CALLBACK_PREFIX}{transaction_id}", style=ButtonStyle.PRIMARY)],
-            [InlineKeyboardButton("Set Source Account", callback_data=f"{SOURCE_ACCOUNT_CALLBACK_PREFIX}{transaction_id}", style=ButtonStyle.PRIMARY)],
-            [InlineKeyboardButton("Link to Bill", callback_data=f"{BILL_CALLBACK_PREFIX}{transaction_id}", style=ButtonStyle.PRIMARY)],
-            [InlineKeyboardButton("Manage Tags", callback_data=f"{TAGS_CALLBACK_PREFIX}{transaction_id}", style=ButtonStyle.PRIMARY)],
-            [InlineKeyboardButton("Cancel", callback_data=f"{CANCEL_BUTTON_PREFIX}{transaction_id}", style=ButtonStyle.DANGER)]
-        ])
+        markup = get_main_menu_markup(transaction_id, link)
 
         text = f"{transaction_details}\n\n✅ **Bill unlinked successfully!**\n\n**What would you like to customize?**"
         await callback_query.message.edit_text(text, reply_markup=markup)
@@ -472,19 +446,10 @@ async def back_to_main_menu(client: FireflyParserBot, callback_query: CallbackQu
     
     firefly_api = FireflyApi()
     
-    # Get transaction details and Firefly link
     transaction_details = await get_transaction_details_text(firefly_api, transaction_id)
     link = firefly_api.transaction_show_url(transaction_id)
     
-    markup = InlineKeyboardMarkup([
-        [InlineKeyboardButton("View in Firefly", url=link, style=ButtonStyle.PRIMARY)],
-        [InlineKeyboardButton("Set Budget", callback_data=f"{BUDGET_CALLBACK_PREFIX}{transaction_id}", style=ButtonStyle.PRIMARY)],
-        [InlineKeyboardButton("Set Category", callback_data=f"{CATEGORY_CALLBACK_PREFIX}{transaction_id}", style=ButtonStyle.PRIMARY)],
-        [InlineKeyboardButton("Set Source Account", callback_data=f"{SOURCE_ACCOUNT_CALLBACK_PREFIX}{transaction_id}", style=ButtonStyle.PRIMARY)],
-        [InlineKeyboardButton("Link to Bill", callback_data=f"{BILL_CALLBACK_PREFIX}{transaction_id}", style=ButtonStyle.PRIMARY)],
-        [InlineKeyboardButton("Manage Tags", callback_data=f"{TAGS_CALLBACK_PREFIX}{transaction_id}", style=ButtonStyle.PRIMARY)],
-        [InlineKeyboardButton("Cancel", callback_data=f"{CANCEL_BUTTON_PREFIX}{transaction_id}", style=ButtonStyle.DANGER)]
-    ])
+    markup = get_main_menu_markup(transaction_id, link)
     
     text = f"{transaction_details}\n\n**What would you like to customize?**"
     
@@ -495,6 +460,7 @@ async def back_to_main_menu(client: FireflyParserBot, callback_query: CallbackQu
 async def cancel_customization(client: FireflyParserBot, callback_query: CallbackQuery):
     await callback_query.answer()
     await clear_tag_contexts(callback_query.message)
+    await clear_amount_contexts(callback_query.message)
     
     # Edit back to original transaction state with just View in Firefly and Customize buttons
     transaction_id = str(callback_query.data.replace(CANCEL_BUTTON_PREFIX, ""))
@@ -799,4 +765,166 @@ async def handle_add_tag_reply(_, message: Message):
             pass
 
     FireflyParserBot._add_tag_context = None
+    await message.stop_propagation()
+
+
+@FireflyParserBot.on_callback_query(filters.regex(f"^{SPLIT_AMOUNT_CALLBACK_PREFIX}.*") & filters.user(TELEGRAM_ADMINS))
+async def handle_split_amount_callback(client: FireflyParserBot, callback_query: CallbackQuery):
+    await callback_query.answer("Splitting amount in half...")
+    transaction_id = str(callback_query.data.replace(SPLIT_AMOUNT_CALLBACK_PREFIX, ""))
+    firefly_api = FireflyApi()
+
+    try:
+        transaction_data = firefly_api.get_json(f"transactions/{transaction_id}")
+        if not transaction_data or 'data' not in transaction_data:
+            await callback_query.edit_message_text("Failed to fetch transaction details.")
+            return
+
+        inner_transaction = transaction_data['data']['attributes']['transactions'][0]
+        current_amount = float(inner_transaction.get('amount', 0))
+        new_amount = round(current_amount / 2, 2)
+
+        update_payload = {"transactions": [{"amount": str(new_amount)}]}
+
+        foreign_amount = inner_transaction.get('foreign_amount')
+        if foreign_amount:
+            new_foreign = round(float(foreign_amount) / 2, 2)
+            update_payload["transactions"][0]["foreign_amount"] = str(new_foreign)
+
+        firefly_api.update_transaction(transaction_id, update_payload)
+
+        transaction_details = await get_transaction_details_text(firefly_api, transaction_id)
+        link = firefly_api.transaction_show_url(transaction_id)
+        markup = get_main_menu_markup(transaction_id, link)
+
+        text = f"{transaction_details}\n\n✅ **Amount split in half: {current_amount:.2f} → {new_amount:.2f}**\n\n**What would you like to customize?**"
+        await callback_query.message.edit_text(text, reply_markup=markup)
+
+    except Exception as e:
+        LOGS.error(f"Error splitting amount for transaction {transaction_id}: {e}")
+        await callback_query.edit_message_text("Failed to split amount. Please try again.")
+
+
+@FireflyParserBot.on_callback_query(filters.regex(f"^{UPDATE_AMOUNT_CALLBACK_PREFIX}.*") & filters.user(TELEGRAM_ADMINS))
+async def handle_update_amount_callback(client: FireflyParserBot, callback_query: CallbackQuery):
+    await callback_query.answer()
+    transaction_id = str(callback_query.data.replace(UPDATE_AMOUNT_CALLBACK_PREFIX, ""))
+
+    firefly_api = FireflyApi()
+    try:
+        transaction_data = firefly_api.get_json(f"transactions/{transaction_id}")
+        if not transaction_data or 'data' not in transaction_data:
+            await callback_query.edit_message_text("Failed to fetch transaction details.")
+            return
+
+        inner_transaction = transaction_data['data']['attributes']['transactions'][0]
+        current_amount = float(inner_transaction.get('amount', 0))
+        currency = inner_transaction.get('currency_code', '')
+    except Exception:
+        await callback_query.edit_message_text("Failed to fetch transaction details.")
+        return
+
+    text = f"Current amount: **{current_amount:.2f} {currency}**\n\nSend the new amount as a reply to this message."
+    reply_msg = await callback_query.message.reply(
+        text,
+        reply_markup=ForceReply(selective=True)
+    )
+    FireflyParserBot._update_amount_context = {
+        "user_id": callback_query.from_user.id,
+        "transaction_id": transaction_id,
+        "message_id": callback_query.message.id,
+        "reply_message_id": reply_msg.id
+    }
+
+
+@FireflyParserBot.on_message(filters.private & filters.user(TELEGRAM_ADMINS), group=10)
+async def handle_update_amount_reply(_, message: Message):
+    if not hasattr(FireflyParserBot, '_update_amount_context'):
+        await message.continue_propagation()
+        return
+
+    ctx = getattr(FireflyParserBot, "_update_amount_context", None)
+    if not ctx:
+        await message.continue_propagation()
+        return
+
+    if not message.reply_to_message_id:
+        await message.continue_propagation()
+        return
+
+    if ctx.get("reply_message_id") != message.reply_to_message_id:
+        await message.continue_propagation()
+        return
+
+    if ctx.get("user_id") != message.from_user.id:
+        await message.continue_propagation()
+        return
+
+    raw_amount = message.text.strip()
+
+    try:
+        if "reply_message_id" in ctx:
+            await message.chat.delete_messages(ctx["reply_message_id"])
+    except Exception:
+        pass
+
+    try:
+        await message.delete()
+    except Exception:
+        pass
+
+    try:
+        new_amount = float(raw_amount)
+        if new_amount <= 0:
+            raise ValueError("Amount must be positive")
+    except (ValueError, TypeError):
+        original_message = await message.chat.get_messages(ctx["message_id"])
+        await original_message.edit_text("❌ Invalid amount. Please enter a positive number.")
+        FireflyParserBot._update_amount_context = None
+        await message.stop_propagation()
+        return
+
+    firefly_api = FireflyApi()
+    transaction_id = ctx["transaction_id"]
+
+    try:
+        transaction_data = firefly_api.get_json(f"transactions/{transaction_id}")
+        if not transaction_data or 'data' not in transaction_data:
+            original_message = await message.chat.get_messages(ctx["message_id"])
+            await original_message.edit_text("❌ Failed to fetch transaction details.")
+            FireflyParserBot._update_amount_context = None
+            await message.stop_propagation()
+            return
+
+        inner_transaction = transaction_data['data']['attributes']['transactions'][0]
+        old_amount = float(inner_transaction.get('amount', 0))
+
+        update_payload = {"transactions": [{"amount": str(new_amount)}]}
+
+        foreign_amount = inner_transaction.get('foreign_amount')
+        if foreign_amount:
+            ratio = new_amount / old_amount if old_amount > 0 else 1
+            new_foreign = round(float(foreign_amount) * ratio, 2)
+            update_payload["transactions"][0]["foreign_amount"] = str(new_foreign)
+
+        firefly_api.update_transaction(transaction_id, update_payload)
+
+        transaction_details = await get_transaction_details_text(firefly_api, transaction_id)
+        link = firefly_api.transaction_show_url(transaction_id)
+        markup = get_main_menu_markup(transaction_id, link)
+
+        text = f"{transaction_details}\n\n✅ **Amount updated: {old_amount:.2f} → {new_amount:.2f}**\n\n**What would you like to customize?**"
+
+        original_message = await message.chat.get_messages(ctx["message_id"])
+        await original_message.edit_text(text, reply_markup=markup)
+
+    except Exception as e:
+        LOGS.error(f"Error updating amount for transaction {transaction_id}: {e}")
+        try:
+            original_message = await message.chat.get_messages(ctx["message_id"])
+            await original_message.edit_text("❌ Failed to update amount. Please try again.")
+        except Exception:
+            pass
+
+    FireflyParserBot._update_amount_context = None
     await message.stop_propagation()
