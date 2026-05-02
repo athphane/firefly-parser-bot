@@ -1,6 +1,5 @@
 from pyrogram import filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, Message, ForceReply
-from pyrogram.enums import ButtonStyle
 from app import FireflyParserBot, TELEGRAM_ADMINS
 from app.firefly.firefly import FireflyApi
 import logging
@@ -24,15 +23,15 @@ UPDATE_AMOUNT_CALLBACK_PREFIX = "update_amount_"
 
 def get_main_menu_markup(transaction_id: str, link: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("View in Firefly", url=link, style=ButtonStyle.PRIMARY)],
-        [InlineKeyboardButton("Set Budget", callback_data=f"{BUDGET_CALLBACK_PREFIX}{transaction_id}", style=ButtonStyle.PRIMARY)],
-        [InlineKeyboardButton("Set Category", callback_data=f"{CATEGORY_CALLBACK_PREFIX}{transaction_id}", style=ButtonStyle.PRIMARY)],
-        [InlineKeyboardButton("Set Source Account", callback_data=f"{SOURCE_ACCOUNT_CALLBACK_PREFIX}{transaction_id}", style=ButtonStyle.PRIMARY)],
-        [InlineKeyboardButton("Link to Bill", callback_data=f"{BILL_CALLBACK_PREFIX}{transaction_id}", style=ButtonStyle.PRIMARY)],
-        [InlineKeyboardButton("Manage Tags", callback_data=f"{TAGS_CALLBACK_PREFIX}{transaction_id}", style=ButtonStyle.PRIMARY)],
-        [InlineKeyboardButton("Split in Half", callback_data=f"{SPLIT_AMOUNT_CALLBACK_PREFIX}{transaction_id}", style=ButtonStyle.PRIMARY)],
-        [InlineKeyboardButton("Update Amount", callback_data=f"{UPDATE_AMOUNT_CALLBACK_PREFIX}{transaction_id}", style=ButtonStyle.PRIMARY)],
-        [InlineKeyboardButton("Cancel", callback_data=f"{CANCEL_BUTTON_PREFIX}{transaction_id}", style=ButtonStyle.DANGER)]
+        [InlineKeyboardButton("🔗 View in Firefly", url=link)],
+        [InlineKeyboardButton("💰 Set Budget", callback_data=f"{BUDGET_CALLBACK_PREFIX}{transaction_id}")],
+        [InlineKeyboardButton("📁 Set Category", callback_data=f"{CATEGORY_CALLBACK_PREFIX}{transaction_id}")],
+        [InlineKeyboardButton("🏦 Set Source Account", callback_data=f"{SOURCE_ACCOUNT_CALLBACK_PREFIX}{transaction_id}")],
+        [InlineKeyboardButton("📄 Link to Bill", callback_data=f"{BILL_CALLBACK_PREFIX}{transaction_id}")],
+        [InlineKeyboardButton("🏷️ Manage Tags", callback_data=f"{TAGS_CALLBACK_PREFIX}{transaction_id}")],
+        [InlineKeyboardButton("✂️ Split in Half", callback_data=f"{SPLIT_AMOUNT_CALLBACK_PREFIX}{transaction_id}")],
+        [InlineKeyboardButton("✏️ Update Amount", callback_data=f"{UPDATE_AMOUNT_CALLBACK_PREFIX}{transaction_id}")],
+        [InlineKeyboardButton("❌ Cancel", callback_data=f"{CANCEL_BUTTON_PREFIX}{transaction_id}")]
     ])
 
 
@@ -151,9 +150,8 @@ async def handle_set_budget_callback(client: FireflyParserBot, callback_query: C
             buttons.append([InlineKeyboardButton(
                 budget.name,
                 callback_data=f"update_trans_budget_{transaction_id}_{budget.id}",
-                style=ButtonStyle.SUCCESS
             )])
-        buttons.append([InlineKeyboardButton("<< Back", callback_data=f"{BACK_BUTTON_PREFIX}{transaction_id}", style=ButtonStyle.DEFAULT)])
+        buttons.append([InlineKeyboardButton("⬅️ Back", callback_data=f"{BACK_BUTTON_PREFIX}{transaction_id}")])
 
         markup = InlineKeyboardMarkup(buttons)
         text = f"{transaction_details}\n\n**Select a budget:**"
@@ -184,9 +182,8 @@ async def handle_set_category_callback(client: FireflyParserBot, callback_query:
             buttons.append([InlineKeyboardButton(
                 category.name,
                 callback_data=f"update_trans_category_{transaction_id}_{category.id}",
-                style=ButtonStyle.SUCCESS
             )])
-        buttons.append([InlineKeyboardButton("<< Back", callback_data=f"{BACK_BUTTON_PREFIX}{transaction_id}", style=ButtonStyle.DEFAULT)])
+        buttons.append([InlineKeyboardButton("⬅️ Back", callback_data=f"{BACK_BUTTON_PREFIX}{transaction_id}")])
 
         markup = InlineKeyboardMarkup(buttons)
         text = f"{transaction_details}\n\n**Select a category:**"
@@ -221,9 +218,8 @@ async def handle_set_source_account_callback(client: FireflyParserBot, callback_
             buttons.append([InlineKeyboardButton(
                 account.name,
                 callback_data=f"update_trans_source_{transaction_id}_{account.id}",
-                style=ButtonStyle.SUCCESS
             )])
-        buttons.append([InlineKeyboardButton("<< Back", callback_data=f"{BACK_BUTTON_PREFIX}{transaction_id}", style=ButtonStyle.DEFAULT)])
+        buttons.append([InlineKeyboardButton("⬅️ Back", callback_data=f"{BACK_BUTTON_PREFIX}{transaction_id}")])
 
         markup = InlineKeyboardMarkup(buttons)
         text = f"{transaction_details}\n\n**Select a source account:**"
@@ -268,7 +264,6 @@ async def handle_set_bill_callback(client: FireflyParserBot, callback_query: Cal
             buttons.append([InlineKeyboardButton(
                 bill.name,
                 callback_data=f"update_trans_bill_{transaction_id}_{bill.id}",
-                style=ButtonStyle.SUCCESS
             )])
 
         # Add unlink button if there's a bill linked
@@ -276,10 +271,9 @@ async def handle_set_bill_callback(client: FireflyParserBot, callback_query: Cal
             buttons.append([InlineKeyboardButton(
                 f"🗑️ Unlink '{current_bill_name}'",
                 callback_data=f"unlink_trans_bill_{transaction_id}",
-                style=ButtonStyle.DANGER
             )])
 
-        buttons.append([InlineKeyboardButton("<< Back", callback_data=f"{BACK_BUTTON_PREFIX}{transaction_id}", style=ButtonStyle.DEFAULT)])
+        buttons.append([InlineKeyboardButton("⬅️ Back", callback_data=f"{BACK_BUTTON_PREFIX}{transaction_id}")])
 
         markup = InlineKeyboardMarkup(buttons)
         text = f"{transaction_details}\n\n**Select a bill:**"
@@ -470,8 +464,8 @@ async def cancel_customization(client: FireflyParserBot, callback_query: Callbac
     link = firefly_api.transaction_show_url(transaction_id)
     
     markup = InlineKeyboardMarkup([
-        [InlineKeyboardButton("View in Firefly", url=link, style=ButtonStyle.PRIMARY)],
-        [InlineKeyboardButton("Customize Transaction", callback_data=f"{TRANSACTION_ID_PREFIX}{transaction_id}", style=ButtonStyle.SUCCESS)]
+        [InlineKeyboardButton("🔗 View in Firefly", url=link)],
+        [InlineKeyboardButton("⚙️ Customize Transaction", callback_data=f"{TRANSACTION_ID_PREFIX}{transaction_id}")]
     ])
     
     text = f"{transaction_details}\n\n**Transaction customization cancelled.**"
@@ -518,23 +512,21 @@ async def handle_manage_tags_callback(client: FireflyParserBot, callback_query: 
             if tag not in current_tags:
                 quick_buttons.append([InlineKeyboardButton(
                     f"+ {tag.title()}",
-                    callback_data=f"quick_add_tag_{transaction_id}_{tag}",
-                    style=ButtonStyle.SUCCESS
+                    callback_data=f"quick_add_tag_{transaction_id}_{tag}"
                 )])
 
         # Create markup with quick add buttons, custom add option, and remove tag buttons
         all_buttons = quick_buttons.copy()
-        all_buttons.append([InlineKeyboardButton("✏️ Add Custom Tag", callback_data=f"add_custom_tag_{transaction_id}", style=ButtonStyle.PRIMARY)])
+        all_buttons.append([InlineKeyboardButton("✏️ Add Custom Tag", callback_data=f"add_custom_tag_{transaction_id}")])
 
         # Add remove buttons for each existing tag
         for tag in current_tags:
             all_buttons.append([InlineKeyboardButton(
                 f"🗑️ {tag}",
                 callback_data=f"remove_tag_{transaction_id}_{tag}",
-                style=ButtonStyle.DANGER
             )])
 
-        all_buttons.append([InlineKeyboardButton("<< Back", callback_data=f"{BACK_BUTTON_PREFIX}{transaction_id}", style=ButtonStyle.DEFAULT)])
+        all_buttons.append([InlineKeyboardButton("⬅️ Back", callback_data=f"{BACK_BUTTON_PREFIX}{transaction_id}")])
 
         markup = InlineKeyboardMarkup(all_buttons)
 

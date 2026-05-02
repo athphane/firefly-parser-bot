@@ -3,7 +3,7 @@ from decimal import Decimal, InvalidOperation
 import logging
 
 from pyrogram import filters
-from pyrogram.enums import ButtonStyle, ChatAction
+from pyrogram.enums import ChatAction
 from pyrogram.types import CallbackQuery, ForceReply, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 from app import FireflyParserBot, TELEGRAM_ADMINS
@@ -79,24 +79,23 @@ def _account_buttons(accounts: list[Account], callback_prefix: str) -> list[list
         buttons.append([InlineKeyboardButton(
             _trim_button_label(account.name),
             callback_data=f"{callback_prefix}{account.id}",
-            style=ButtonStyle.SUCCESS
         )])
 
-    buttons.append([InlineKeyboardButton("Cancel", callback_data=INCOME_CANCEL_CALLBACK, style=ButtonStyle.DANGER)])
+    buttons.append([InlineKeyboardButton("❌ Cancel", callback_data=INCOME_CANCEL_CALLBACK)])
     return buttons
 
 
 def _cancel_markup() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("Cancel", callback_data=INCOME_CANCEL_CALLBACK, style=ButtonStyle.DANGER)]
+        [InlineKeyboardButton("❌ Cancel", callback_data=INCOME_CANCEL_CALLBACK)]
     ])
 
 
 def _confirm_markup() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("Create Transaction", callback_data=INCOME_CREATE_CALLBACK, style=ButtonStyle.SUCCESS)],
-        [InlineKeyboardButton("Start Over", callback_data=INCOME_RESTART_CALLBACK, style=ButtonStyle.DEFAULT)],
-        [InlineKeyboardButton("Cancel", callback_data=INCOME_CANCEL_CALLBACK, style=ButtonStyle.DANGER)]
+        [InlineKeyboardButton("✅ Create Transaction", callback_data=INCOME_CREATE_CALLBACK)],
+        [InlineKeyboardButton("🔄 Start Over", callback_data=INCOME_RESTART_CALLBACK)],
+        [InlineKeyboardButton("❌ Cancel", callback_data=INCOME_CANCEL_CALLBACK)]
     ])
 
 
@@ -403,7 +402,7 @@ async def create_income_transaction(_, callback_query: CallbackQuery) -> None:
             f"**Destination:** {transaction.get('destination_name')}"
         )
         markup = InlineKeyboardMarkup([
-            [InlineKeyboardButton("View in Firefly", url=link, style=ButtonStyle.PRIMARY)]
+            [InlineKeyboardButton("🔗 View in Firefly", url=link)]
         ])
 
         await callback_query.message.edit_text(details, reply_markup=markup)

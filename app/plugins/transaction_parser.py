@@ -2,7 +2,7 @@ from pyrogram import filters
 from app.firefly.firefly import FireflyApi
 import logging
 
-from pyrogram.enums import ChatAction, ButtonStyle
+from pyrogram.enums import ChatAction
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 from app import FireflyParserBot, TELEGRAM_ADMINS
 from app.models.parsed_transaction_message import ParsedTransactionMessage
@@ -68,8 +68,8 @@ async def incoming_transaction_message(_, message: Message):
         )
         
         markup = InlineKeyboardMarkup([
-            [InlineKeyboardButton("View in Firefly", url=link, style=ButtonStyle.PRIMARY)],
-            [InlineKeyboardButton("Customize Transaction", callback_data=f"{TRANSACTION_ID_PREFIX}{transaction_id}", style=ButtonStyle.SUCCESS)]
+            [InlineKeyboardButton("🔗 View in Firefly", url=link)],
+            [InlineKeyboardButton("⚙️ Customize Transaction", callback_data=f"{TRANSACTION_ID_PREFIX}{transaction_id}")]
         ])
         
         await message.reply(details, reply_markup=markup, reply_to_message_id=None)
@@ -124,8 +124,8 @@ async def incoming_transfer_receipt(_, message: Message):
         )
         
         markup = InlineKeyboardMarkup([
-            [InlineKeyboardButton("View in Firefly", url=link, style=ButtonStyle.PRIMARY)],
-            [InlineKeyboardButton("Customize Transaction", callback_data=f"{TRANSACTION_ID_PREFIX}{transaction_id}", style=ButtonStyle.SUCCESS)]
+            [InlineKeyboardButton("🔗 View in Firefly", url=link)],
+            [InlineKeyboardButton("⚙️ Customize Transaction", callback_data=f"{TRANSACTION_ID_PREFIX}{transaction_id}")]
         ])
         
         await message.reply(details, reply_markup=markup)
