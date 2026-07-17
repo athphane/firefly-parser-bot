@@ -1,10 +1,13 @@
 import json
 import base64
-from groq import Groq
+import logging
+from groq import APIError, Groq
 from groq.types.chat.chat_completion_content_part_image_param import ChatCompletionContentPartImageParam, ImageURL
 from groq.types.chat import ChatCompletionSystemMessageParam, ChatCompletionUserMessageParam, ChatCompletionContentPartTextParam
 from groq.types.chat.completion_create_params import ResponseFormatResponseFormatJsonObject
 from app import GROQ_API_KEY
+
+LOGS = logging.getLogger(__name__)
 
 def encode_image(image_path: str) -> str:
     """
@@ -21,21 +24,25 @@ def extract_transaction_details_from_image(path) -> dict:
     image_for_ai = f"data:image/jpeg;base64,{base_64_image}"
         
     client = Groq(api_key=GROQ_API_KEY)
-    completion = client.chat.completions.create(
-        model="meta-llama/llama-4-scout-17b-16e-instruct",
-        messages=[
-            ChatCompletionUserMessageParam(role='user', content=[
-                ChatCompletionContentPartTextParam(type='text', text=get_system_message_for_image()),
-                ChatCompletionContentPartImageParam(type='image_url', image_url=ImageURL(detail='high', url=image_for_ai))
-                ]),
-        ],
-        temperature=1,
-        max_completion_tokens=1024,
-        top_p=1,
-        stream=False,
-        response_format=ResponseFormatResponseFormatJsonObject(type='json_object'),
-        stop=None,
-    )
+    try:
+        completion = client.chat.completions.create(
+            model="qwen/qwen3.6-27b",
+            messages=[
+                ChatCompletionUserMessageParam(role='user', content=[
+                    ChatCompletionContentPartTextParam(type='text', text=get_system_message_for_image()),
+                    ChatCompletionContentPartImageParam(type='image_url', image_url=ImageURL(detail='high', url=image_for_ai))
+                    ]),
+            ],
+            temperature=0.6,
+            max_completion_tokens=2048,
+            top_p=0.95,
+            stream=False,
+            response_format=ResponseFormatResponseFormatJsonObject(type='json_object'),
+            stop=None,
+        )
+    except APIError as error:
+        LOGS.warning("Groq could not generate valid JSON for receipt extraction: %s", error)
+        return None
 
     ai_response = completion.choices[0].message.content
 
@@ -65,19 +72,23 @@ def extract_transaction_details_from_text(text: str) -> dict:
     Returns None if parsing fails or required fields are missing.
     """
     client = Groq(api_key=GROQ_API_KEY)
-    completion = client.chat.completions.create(
-        model="meta-llama/llama-4-scout-17b-16e-instruct",
-        messages=[
-            ChatCompletionSystemMessageParam(role='system', content=get_system_message_for_text()),
-            ChatCompletionUserMessageParam(role='user', content=text),
-        ],
-        temperature=1,
-        max_completion_tokens=1024,
-        top_p=1,
-        stream=False,
-        response_format=ResponseFormatResponseFormatJsonObject(type='json_object'),
-        stop=None,
-    )
+    try:
+        completion = client.chat.completions.create(
+            model="qwen/qwen3.6-27b",
+            messages=[
+                ChatCompletionSystemMessageParam(role='system', content=get_system_message_for_text()),
+                ChatCompletionUserMessageParam(role='user', content=text),
+            ],
+            temperature=0.6,
+            max_completion_tokens=2048,
+            top_p=0.95,
+            stream=False,
+            response_format=ResponseFormatResponseFormatJsonObject(type='json_object'),
+            stop=None,
+        )
+    except APIError as error:
+        LOGS.warning("Groq could not generate valid JSON for transaction extraction: %s", error)
+        return None
 
     ai_response = completion.choices[0].message.content
 
@@ -108,8 +119,8 @@ Each of the transaction messages will contain what card the transaction was on,
 the date and time of the transaction, the currency and amount of the transaction,
 where the transaction was taken place, and other information such as approval codes and reference number.
 Your task is it to extract out the important details of each transaction.
-You should output each transaction as a json object. Give the json object as as string. The json object you return MUST have the following keys: card,date,time,currency,amount,location,approval_code,reference_no.
-If you cannot find any of the above keys, please return null.
+You must output exactly one valid JSON object, never a JSON string or top-level null. The JSON object MUST have the following keys: card,date,time,currency,amount,location,approval_code,reference_no.
+If you cannot find any value, set that key to null. Keep every required key in the object.
 When stripping whitespace from the values, please make sure to ONLY strip the whitespace from the start and end of the string. Any whitespace other than that is important.
 The system that uses you will parse it into json and go on from there. Please do not do any markdown formatting.
 """

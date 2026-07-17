@@ -127,7 +127,11 @@ class ParsedTransactionMessage:
         if first_similar_account_id is None:
             return []
 
-        raw_transactions = FireflyApi().get_transactions_from_account(first_similar_account_id)
+        try:
+            raw_transactions = FireflyApi().get_transactions_from_account(first_similar_account_id)
+        except Exception as e:
+            LOGS.warning(f"Failed to get similar transaction descriptions: {e}")
+            return []
 
         transaction_descriptions = []
 

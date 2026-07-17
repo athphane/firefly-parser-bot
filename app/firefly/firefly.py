@@ -37,7 +37,10 @@ class FireflyApi:
             response = requests.get(self.construct_url(endpoint), headers=headers)
 
         if response.status_code == 200:
-            return response.json()
+            try:
+                return response.json()
+            except ValueError:
+                raise Exception(f"Error: 200 OK but invalid JSON - {response.text}") from None
         else:
             raise Exception(f"Error: {response.status_code} - {response.text}")
         

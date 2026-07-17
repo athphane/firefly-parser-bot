@@ -19,6 +19,7 @@ BACK_BUTTON_PREFIX = "back_to_main_"
 CANCEL_BUTTON_PREFIX = "cancel_customization_"
 SPLIT_AMOUNT_CALLBACK_PREFIX = "split_amount_"
 UPDATE_AMOUNT_CALLBACK_PREFIX = "update_amount_"
+DEDUCT_AMOUNT_CALLBACK_PREFIX = "deduct_amount_"
 
 
 def get_main_menu_markup(transaction_id: str, link: str) -> InlineKeyboardMarkup:
@@ -31,19 +32,28 @@ def get_main_menu_markup(transaction_id: str, link: str) -> InlineKeyboardMarkup
         [InlineKeyboardButton("🏷️ Manage Tags", callback_data=f"{TAGS_CALLBACK_PREFIX}{transaction_id}")],
         [InlineKeyboardButton("✂️ Split in Half", callback_data=f"{SPLIT_AMOUNT_CALLBACK_PREFIX}{transaction_id}")],
         [InlineKeyboardButton("✏️ Update Amount", callback_data=f"{UPDATE_AMOUNT_CALLBACK_PREFIX}{transaction_id}")],
+        [InlineKeyboardButton("➖ Deduct Amount", callback_data=f"{DEDUCT_AMOUNT_CALLBACK_PREFIX}{transaction_id}")],
         [InlineKeyboardButton("❌ Cancel", callback_data=f"{CANCEL_BUTTON_PREFIX}{transaction_id}")]
     ])
 
 
-async def clear_amount_contexts(message: Message):
+async def clear_amount_contexts(client, message: Message):
     if hasattr(FireflyParserBot, '_update_amount_context'):
         ctx = getattr(FireflyParserBot, '_update_amount_context')
         if ctx and "reply_message_id" in ctx:
             try:
-                await message.chat.delete_messages(ctx["reply_message_id"])
+                await client.delete_messages(message.chat.id, ctx["reply_message_id"])
             except Exception:
                 pass
         FireflyParserBot._update_amount_context = None
+    if hasattr(FireflyParserBot, '_deduct_amount_context'):
+        ctx = getattr(FireflyParserBot, '_deduct_amount_context')
+        if ctx and "reply_message_id" in ctx:
+            try:
+                await client.delete_messages(message.chat.id, ctx["reply_message_id"])
+            except Exception:
+                pass
+        FireflyParserBot._deduct_amount_context = None
 
 
 async def get_transaction_details_text(firefly_api, transaction_id: str) -> str:
@@ -94,7 +104,7 @@ async def get_transaction_details_text(firefly_api, transaction_id: str) -> str:
         return "Error fetching transaction details."
 
 
-async def clear_tag_contexts(message: Message):
+async def clear_tag_contexts(client, message: Message):
     """
     Clear any existing tag-related reply contexts and attempt to delete the ForceReply messages.
     """
@@ -102,7 +112,7 @@ async def clear_tag_contexts(message: Message):
         ctx = getattr(FireflyParserBot, '_add_tag_context')
         if ctx and "reply_message_id" in ctx:
             try:
-                await message.chat.delete_messages(ctx["reply_message_id"])
+                await client.delete_messages(message.chat.id, ctx["reply_message_id"])
             except Exception:
                 pass
         FireflyParserBot._add_tag_context = None
@@ -453,8 +463,8 @@ async def back_to_main_menu(client: FireflyParserBot, callback_query: CallbackQu
 @FireflyParserBot.on_callback_query(filters.regex(f"^{CANCEL_BUTTON_PREFIX}.*") & filters.user(TELEGRAM_ADMINS))
 async def cancel_customization(client: FireflyParserBot, callback_query: CallbackQuery):
     await callback_query.answer()
-    await clear_tag_contexts(callback_query.message)
-    await clear_amount_contexts(callback_query.message)
+    await clear_tag_contexts(client, callback_query.message)
+    await clear_amount_contexts(client, callback_query.message)
     
     # Edit back to original transaction state with just View in Firefly and Customize buttons
     transaction_id = str(callback_query.data.replace(CANCEL_BUTTON_PREFIX, ""))
@@ -637,7 +647,10 @@ async def add_custom_tag_callback(client: FireflyParserBot, callback_query: Call
     await callback_query.answer()
     transaction_id = str(callback_query.data.replace("add_custom_tag_", ""))
 
-    text = "Send the tag you want to add as a reply to this message."
+    # Clear any existing stale tag context and its ForceReply message
+    await clear_tag_contexts(client, callback_query.message)
+
+    text = "Reply with the tag you want to add:"
     reply_msg = await callback_query.message.reply(
         text,
         reply_markup=ForceReply(selective=True)
@@ -651,7 +664,7 @@ async def add_custom_tag_callback(client: FireflyParserBot, callback_query: Call
 
 
 @FireflyParserBot.on_message(filters.private & filters.user(TELEGRAM_ADMINS), group=10)
-async def handle_add_tag_reply(_, message: Message):
+async def handle_add_tag_reply(client, message: Message):
     # Check if this is a reply to our ForceReply for adding tags
     if not hasattr(FireflyParserBot, '_add_tag_context'):
         await message.continue_propagation()
@@ -678,36 +691,39 @@ async def handle_add_tag_reply(_, message: Message):
 
     # Process the tag addition
     tag = message.text.strip()
-
-    # Try to delete the ForceReply message to clean up the chat
-    try:
-        if "reply_message_id" in ctx:
-            await message.chat.delete_messages(ctx["reply_message_id"])
-    except Exception:
-        pass
-
-    # Delete the user's reply message
-    try:
-        await message.delete()
-    except Exception:
-        pass
+    chat_id = message.chat.id
+    reply_msg_id = ctx["reply_message_id"]
+    original_msg_id = ctx["message_id"]
+    transaction_id = ctx["transaction_id"]
 
     if not tag:
-        original_message = await message.chat.get_messages(ctx["message_id"])
-        await original_message.edit_text("❌ Tag cannot be empty.")
-        FireflyParserBot._add_tag_context = None
+        # Delete the user's empty reply, keep the prompt for retry
+        try:
+            await message.delete()
+        except Exception:
+            pass
         await message.stop_propagation()
         return
 
     firefly_api = FireflyApi()
-    transaction_id = ctx["transaction_id"]
 
     try:
         # Get current transaction to fetch existing tags
         transaction_data = firefly_api.get_json(f"transactions/{transaction_id}")
         if not transaction_data or 'data' not in transaction_data:
-            original_message = await message.chat.get_messages(ctx["message_id"])
-            await original_message.edit_text("❌ Failed to fetch transaction details.")
+            try:
+                await client.delete_messages(chat_id, reply_msg_id)
+            except Exception:
+                pass
+            try:
+                await message.delete()
+            except Exception:
+                pass
+            try:
+                original_message = await client.get_messages(chat_id, original_msg_id)
+                await original_message.edit_text("❌ Failed to fetch transaction details.")
+            except Exception:
+                pass
             FireflyParserBot._add_tag_context = None
             await message.stop_propagation()
             return
@@ -732,8 +748,18 @@ async def handle_add_tag_reply(_, message: Message):
         }
         firefly_api.update_transaction(transaction_id, payload)
 
+        # Delete the ForceReply prompt and user's reply to clean up the chat
+        try:
+            await client.delete_messages(chat_id, reply_msg_id)
+        except Exception:
+            pass
+        try:
+            await message.delete()
+        except Exception:
+            pass
+
         # Refresh the tags view in the original message
-        original_message = await message.chat.get_messages(ctx["message_id"])
+        original_message = await client.get_messages(chat_id, original_msg_id)
 
         # Create a mock callback query object
         class MockCallbackQuery:
@@ -751,7 +777,15 @@ async def handle_add_tag_reply(_, message: Message):
     except Exception as e:
         LOGS.error(f"Error adding tag to transaction {transaction_id}: {e}")
         try:
-            original_message = await message.chat.get_messages(ctx["message_id"])
+            await client.delete_messages(chat_id, reply_msg_id)
+        except Exception:
+            pass
+        try:
+            await message.delete()
+        except Exception:
+            pass
+        try:
+            original_message = await client.get_messages(chat_id, original_msg_id)
             await original_message.edit_text("❌ Failed to add tag. Please try again.")
         except Exception:
             pass
@@ -816,7 +850,10 @@ async def handle_update_amount_callback(client: FireflyParserBot, callback_query
         await callback_query.edit_message_text("Failed to fetch transaction details.")
         return
 
-    text = f"Current amount: **{current_amount:.2f} {currency}**\n\nSend the new amount as a reply to this message."
+    # Clear any existing stale amount context and its ForceReply message
+    await clear_amount_contexts(client, callback_query.message)
+
+    text = f"Current amount: **{current_amount:.2f} {currency}**\n\nReply with the new amount:"
     reply_msg = await callback_query.message.reply(
         text,
         reply_markup=ForceReply(selective=True)
@@ -825,12 +862,50 @@ async def handle_update_amount_callback(client: FireflyParserBot, callback_query
         "user_id": callback_query.from_user.id,
         "transaction_id": transaction_id,
         "message_id": callback_query.message.id,
-        "reply_message_id": reply_msg.id
+        "reply_message_id": reply_msg.id,
+        "currency": currency,
+        "current_amount": current_amount
+    }
+
+
+@FireflyParserBot.on_callback_query(filters.regex(f"^{DEDUCT_AMOUNT_CALLBACK_PREFIX}.*") & filters.user(TELEGRAM_ADMINS))
+async def handle_deduct_amount_callback(client: FireflyParserBot, callback_query: CallbackQuery):
+    await callback_query.answer()
+    transaction_id = str(callback_query.data.replace(DEDUCT_AMOUNT_CALLBACK_PREFIX, ""))
+
+    firefly_api = FireflyApi()
+    try:
+        transaction_data = firefly_api.get_json(f"transactions/{transaction_id}")
+        if not transaction_data or 'data' not in transaction_data:
+            await callback_query.edit_message_text("Failed to fetch transaction details.")
+            return
+
+        inner_transaction = transaction_data['data']['attributes']['transactions'][0]
+        current_amount = float(inner_transaction.get('amount', 0))
+        currency = inner_transaction.get('currency_code', '')
+    except Exception:
+        await callback_query.edit_message_text("Failed to fetch transaction details.")
+        return
+
+    await clear_amount_contexts(client, callback_query.message)
+
+    text = f"Current amount: **{current_amount:.2f} {currency}**\n\nReply with the amount to deduct:"
+    reply_msg = await callback_query.message.reply(
+        text,
+        reply_markup=ForceReply(selective=True)
+    )
+    FireflyParserBot._deduct_amount_context = {
+        "user_id": callback_query.from_user.id,
+        "transaction_id": transaction_id,
+        "message_id": callback_query.message.id,
+        "reply_message_id": reply_msg.id,
+        "currency": currency,
+        "current_amount": current_amount
     }
 
 
 @FireflyParserBot.on_message(filters.private & filters.user(TELEGRAM_ADMINS), group=10)
-async def handle_update_amount_reply(_, message: Message):
+async def handle_update_amount_reply(client, message: Message):
     if not hasattr(FireflyParserBot, '_update_amount_context'):
         await message.continue_propagation()
         return
@@ -853,37 +928,44 @@ async def handle_update_amount_reply(_, message: Message):
         return
 
     raw_amount = message.text.strip()
+    chat_id = message.chat.id
+    reply_msg_id = ctx["reply_message_id"]
+    original_msg_id = ctx["message_id"]
+    transaction_id = ctx["transaction_id"]
 
-    try:
-        if "reply_message_id" in ctx:
-            await message.chat.delete_messages(ctx["reply_message_id"])
-    except Exception:
-        pass
-
-    try:
-        await message.delete()
-    except Exception:
-        pass
-
+    # Validate amount first
     try:
         new_amount = float(raw_amount)
         if new_amount <= 0:
             raise ValueError("Amount must be positive")
     except (ValueError, TypeError):
-        original_message = await message.chat.get_messages(ctx["message_id"])
-        await original_message.edit_text("❌ Invalid amount. Please enter a positive number.")
-        FireflyParserBot._update_amount_context = None
+        # Delete the user's invalid reply, keep the prompt for retry
+        try:
+            await message.delete()
+        except Exception:
+            pass
         await message.stop_propagation()
         return
 
     firefly_api = FireflyApi()
-    transaction_id = ctx["transaction_id"]
 
     try:
         transaction_data = firefly_api.get_json(f"transactions/{transaction_id}")
         if not transaction_data or 'data' not in transaction_data:
-            original_message = await message.chat.get_messages(ctx["message_id"])
-            await original_message.edit_text("❌ Failed to fetch transaction details.")
+            # Clean up on fetch failure
+            try:
+                await client.delete_messages(chat_id, reply_msg_id)
+            except Exception:
+                pass
+            try:
+                await message.delete()
+            except Exception:
+                pass
+            try:
+                original_message = await client.get_messages(chat_id, original_msg_id)
+                await original_message.edit_text("❌ Failed to fetch transaction details.")
+            except Exception:
+                pass
             FireflyParserBot._update_amount_context = None
             await message.stop_propagation()
             return
@@ -901,22 +983,177 @@ async def handle_update_amount_reply(_, message: Message):
 
         firefly_api.update_transaction(transaction_id, update_payload)
 
+        # Delete the ForceReply prompt and user's reply to clean up the chat
+        try:
+            await client.delete_messages(chat_id, reply_msg_id)
+        except Exception:
+            pass
+        try:
+            await message.delete()
+        except Exception:
+            pass
+
+        # Edit the original transaction details message
         transaction_details = await get_transaction_details_text(firefly_api, transaction_id)
         link = firefly_api.transaction_show_url(transaction_id)
         markup = get_main_menu_markup(transaction_id, link)
-
         text = f"{transaction_details}\n\n✅ **Amount updated: {old_amount:.2f} → {new_amount:.2f}**\n\n**What would you like to customize?**"
 
-        original_message = await message.chat.get_messages(ctx["message_id"])
-        await original_message.edit_text(text, reply_markup=markup)
+        try:
+            original_message = await client.get_messages(chat_id, original_msg_id)
+            await original_message.edit_text(text, reply_markup=markup)
+        except Exception:
+            pass
 
     except Exception as e:
         LOGS.error(f"Error updating amount for transaction {transaction_id}: {e}")
         try:
-            original_message = await message.chat.get_messages(ctx["message_id"])
+            await client.delete_messages(chat_id, reply_msg_id)
+        except Exception:
+            pass
+        try:
+            await message.delete()
+        except Exception:
+            pass
+        try:
+            original_message = await client.get_messages(chat_id, original_msg_id)
             await original_message.edit_text("❌ Failed to update amount. Please try again.")
         except Exception:
             pass
 
     FireflyParserBot._update_amount_context = None
+    await message.stop_propagation()
+
+
+@FireflyParserBot.on_message(filters.private & filters.user(TELEGRAM_ADMINS), group=10)
+async def handle_deduct_amount_reply(client, message: Message):
+    if not hasattr(FireflyParserBot, '_deduct_amount_context'):
+        await message.continue_propagation()
+        return
+
+    ctx = getattr(FireflyParserBot, "_deduct_amount_context", None)
+    if not ctx:
+        await message.continue_propagation()
+        return
+
+    if not message.reply_to_message_id:
+        await message.continue_propagation()
+        return
+
+    if ctx.get("reply_message_id") != message.reply_to_message_id:
+        await message.continue_propagation()
+        return
+
+    if ctx.get("user_id") != message.from_user.id:
+        await message.continue_propagation()
+        return
+
+    raw_amount = message.text.strip()
+    chat_id = message.chat.id
+    reply_msg_id = ctx["reply_message_id"]
+    original_msg_id = ctx["message_id"]
+    transaction_id = ctx["transaction_id"]
+    current_amount = ctx.get("current_amount", 0)
+
+    try:
+        deduct_amount = float(raw_amount)
+        if deduct_amount <= 0:
+            raise ValueError("Amount must be positive")
+        if deduct_amount > current_amount:
+            try:
+                await message.delete()
+            except Exception:
+                pass
+            await message.stop_propagation()
+            return
+    except (ValueError, TypeError):
+        try:
+            await message.delete()
+        except Exception:
+            pass
+        await message.stop_propagation()
+        return
+
+    firefly_api = FireflyApi()
+
+    try:
+        transaction_data = firefly_api.get_json(f"transactions/{transaction_id}")
+        if not transaction_data or 'data' not in transaction_data:
+            try:
+                await client.delete_messages(chat_id, reply_msg_id)
+            except Exception:
+                pass
+            try:
+                await message.delete()
+            except Exception:
+                pass
+            try:
+                original_message = await client.get_messages(chat_id, original_msg_id)
+                await original_message.edit_text("❌ Failed to fetch transaction details.")
+            except Exception:
+                pass
+            FireflyParserBot._deduct_amount_context = None
+            await message.stop_propagation()
+            return
+
+        inner_transaction = transaction_data['data']['attributes']['transactions'][0]
+        old_amount = float(inner_transaction.get('amount', 0))
+
+        if deduct_amount > old_amount:
+            try:
+                await message.delete()
+            except Exception:
+                pass
+            await message.stop_propagation()
+            return
+
+        new_amount = round(old_amount - deduct_amount, 2)
+
+        update_payload = {"transactions": [{"amount": str(new_amount)}]}
+
+        foreign_amount = inner_transaction.get('foreign_amount')
+        if foreign_amount:
+            ratio = new_amount / old_amount if old_amount > 0 else 1
+            new_foreign = round(float(foreign_amount) * ratio, 2)
+            update_payload["transactions"][0]["foreign_amount"] = str(new_foreign)
+
+        firefly_api.update_transaction(transaction_id, update_payload)
+
+        try:
+            await client.delete_messages(chat_id, reply_msg_id)
+        except Exception:
+            pass
+        try:
+            await message.delete()
+        except Exception:
+            pass
+
+        transaction_details = await get_transaction_details_text(firefly_api, transaction_id)
+        link = firefly_api.transaction_show_url(transaction_id)
+        markup = get_main_menu_markup(transaction_id, link)
+        text = f"{transaction_details}\n\n✅ **Amount deducted: {old_amount:.2f} - {deduct_amount:.2f} = {new_amount:.2f}**\n\n**What would you like to customize?**"
+
+        try:
+            original_message = await client.get_messages(chat_id, original_msg_id)
+            await original_message.edit_text(text, reply_markup=markup)
+        except Exception:
+            pass
+
+    except Exception as e:
+        LOGS.error(f"Error deducting amount from transaction {transaction_id}: {e}")
+        try:
+            await client.delete_messages(chat_id, reply_msg_id)
+        except Exception:
+            pass
+        try:
+            await message.delete()
+        except Exception:
+            pass
+        try:
+            original_message = await client.get_messages(chat_id, original_msg_id)
+            await original_message.edit_text("❌ Failed to deduct amount. Please try again.")
+        except Exception:
+            pass
+
+    FireflyParserBot._deduct_amount_context = None
     await message.stop_propagation()
