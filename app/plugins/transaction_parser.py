@@ -1,5 +1,6 @@
 from pyrogram import filters
 from app.firefly.firefly import FireflyApi
+from io import BytesIO
 import logging
 
 from pyrogram.enums import ChatAction
@@ -8,9 +9,35 @@ from app import FireflyParserBot, TELEGRAM_ADMINS
 from app.models.parsed_transaction_message import ParsedTransactionMessage
 
 from app.plugins.transaction_customization import TRANSACTION_ID_PREFIX
-from app.plugins.transaction_utils import extract_transaction_details_from_image, extract_transaction_details_from_text
+from app.plugins.transaction_utils import (
+    TransactionExtractionResult,
+    extract_transaction_details_from_image,
+    extract_transaction_details_from_text,
+)
 
 LOGS = logging.getLogger(__name__)
+
+
+async def reply_with_error_file(message: Message, error_message: str):
+    with BytesIO(error_message.encode("utf-8")) as error_file:
+        error_file.name = f"transaction-error-{message.id}.txt"
+        await message.reply_document(
+            error_file,
+            caption="Transaction processing error",
+            reply_to_message_id=message.id
+        )
+
+
+def build_error_report(
+    error_message: str,
+    extraction_result: TransactionExtractionResult
+) -> str:
+    completion_data = extraction_result.completion_data or "No completion was returned by Groq."
+    sections = [error_message]
+    if extraction_result.error:
+        sections.append(f"Extraction error:\n{extraction_result.error}")
+    sections.append(f"Groq completion data:\n{completion_data}")
+    return "\n\n".join(sections)
 
 
 def clear_reply_contexts():
@@ -32,10 +59,18 @@ async def incoming_transaction_message(_, message: Message):
     
     await message.reply_chat_action(ChatAction.TYPING)
 
-    json_decoded = extract_transaction_details_from_text(message.text)
+    extraction_result = extract_transaction_details_from_text(message.text)
+    json_decoded = extraction_result.details
+    LOGS.info("json_decoded for text message %s: %s", message.id, json_decoded)
 
     if json_decoded is None:
-        await message.reply("I could not parse the transaction. Please try again.")
+        await reply_with_error_file(
+            message,
+            build_error_report(
+                "I could not parse the transaction. Please try again.",
+                extraction_result
+            )
+        )
         return
 
     parsed_transaction_message = ParsedTransactionMessage(
@@ -72,12 +107,19 @@ async def incoming_transaction_message(_, message: Message):
             [InlineKeyboardButton("⚙️ Customize Transaction", callback_data=f"{TRANSACTION_ID_PREFIX}{transaction_id}")]
         ])
         
-        await message.reply(details, reply_markup=markup, reply_to_message_id=None)
+        await message.reply(
+            details,
+            reply_markup=markup,
+            reply_to_message_id=message.id
+        )
         return
     except Exception as e:
         details = f"Transaction created, but could not parse details. Error: {e}"
-        await message.reply(details)
-        LOGS.error(e)
+        LOGS.exception("Could not parse the created text transaction response")
+        await reply_with_error_file(
+            message,
+            build_error_report(details, extraction_result)
+        )
         return
 
 
@@ -90,10 +132,18 @@ async def incoming_transfer_receipt(_, message: Message):
     
     path = await message.download()
 
-    json_decoded = extract_transaction_details_from_image(path)
+    extraction_result = extract_transaction_details_from_image(path)
+    json_decoded = extraction_result.details
+    LOGS.info("json_decoded for photo message %s: %s", message.id, json_decoded)
 
     if json_decoded is None:
-        await message.reply("I could not parse the transaction. Please try again.")
+        await reply_with_error_file(
+            message,
+            build_error_report(
+                "I could not parse the transaction. Please try again.",
+                extraction_result
+            )
+        )
         return
 
     parsed_transaction_message = ParsedTransactionMessage(
@@ -128,11 +178,19 @@ async def incoming_transfer_receipt(_, message: Message):
             [InlineKeyboardButton("⚙️ Customize Transaction", callback_data=f"{TRANSACTION_ID_PREFIX}{transaction_id}")]
         ])
         
-        await message.reply(details, reply_markup=markup)
+        await message.reply(
+            details,
+            reply_markup=markup,
+            reply_to_message_id=message.id
+        )
         return
     except Exception as e:
         details = f"Transaction created, but could not parse details. Error: {e}"
-        await message.reply(details)
+        LOGS.exception("Could not parse the created photo transaction response")
+        await reply_with_error_file(
+            message,
+            build_error_report(details, extraction_result)
+        )
         return
 
 

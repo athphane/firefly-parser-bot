@@ -1,6 +1,9 @@
 import json
 import base64
 import logging
+from dataclasses import dataclass
+from typing import Optional
+
 from groq import APIError, Groq
 from groq.types.chat.chat_completion_content_part_image_param import ChatCompletionContentPartImageParam, ImageURL
 from groq.types.chat import ChatCompletionSystemMessageParam, ChatCompletionUserMessageParam, ChatCompletionContentPartTextParam
@@ -8,6 +11,21 @@ from groq.types.chat.completion_create_params import ResponseFormatResponseForma
 from app import GROQ_API_KEY
 
 LOGS = logging.getLogger(__name__)
+
+
+@dataclass
+class TransactionExtractionResult:
+    details: Optional[dict]
+    completion_data: Optional[str]
+    error: Optional[str] = None
+
+
+def serialize_completion(completion) -> str:
+    try:
+        return completion.model_dump_json(indent=2)
+    except Exception:
+        return repr(completion)
+
 
 def encode_image(image_path: str) -> str:
     """
@@ -18,7 +36,7 @@ def encode_image(image_path: str) -> str:
     with open(image_path, 'rb') as image_file:
         return base64.b64encode(image_file.read()).decode('utf-8')
 
-def extract_transaction_details_from_image(path) -> dict:
+def extract_transaction_details_from_image(path) -> TransactionExtractionResult:
     base_64_image = encode_image(path)
     
     image_for_ai = f"data:image/jpeg;base64,{base_64_image}"
@@ -37,39 +55,70 @@ def extract_transaction_details_from_image(path) -> dict:
             max_completion_tokens=2048,
             top_p=0.95,
             stream=False,
+            reasoning_effort="none",
             response_format=ResponseFormatResponseFormatJsonObject(type='json_object'),
             stop=None,
         )
     except APIError as error:
         LOGS.warning("Groq could not generate valid JSON for receipt extraction: %s", error)
-        return None
+        return TransactionExtractionResult(
+            details=None,
+            completion_data=None,
+            error=f"Groq API error: {error}"
+        )
 
-    ai_response = completion.choices[0].message.content
+    completion_data = serialize_completion(completion)
+
+    try:
+        ai_response = completion.choices[0].message.content
+    except Exception as error:
+        return TransactionExtractionResult(
+            details=None,
+            completion_data=completion_data,
+            error=f"Could not read the completion content: {error}"
+        )
 
     try:
         json_decoded = json.loads(ai_response)
-    except Exception:
-        return None
+    except Exception as error:
+        return TransactionExtractionResult(
+            details=None,
+            completion_data=completion_data,
+            error=f"Could not decode the completion content as JSON: {error}"
+        )
 
     # If the response is `null` or not a dict, return early
     if not isinstance(json_decoded, dict):
-        return None
+        return TransactionExtractionResult(
+            details=None,
+            completion_data=completion_data,
+            error=f"Expected a JSON object, received {type(json_decoded).__name__}."
+        )
 
     required_keys = [
         'date', 'time', 'currency', 'amount',
         'location', 'reference_no'
     ]
 
-    if any(json_decoded.get(k) is None for k in required_keys):
-        return None
+    missing_keys = [key for key in required_keys if json_decoded.get(key) is None]
+    if missing_keys:
+        return TransactionExtractionResult(
+            details=None,
+            completion_data=completion_data,
+            error=f"Missing required values: {', '.join(missing_keys)}"
+        )
 
-    return json_decoded
+    return TransactionExtractionResult(
+        details=json_decoded,
+        completion_data=completion_data
+    )
 
-def extract_transaction_details_from_text(text: str) -> dict:
+
+def extract_transaction_details_from_text(text: str) -> TransactionExtractionResult:
     """
     Uses Groq AI to extract transaction details from the given text.
-    Returns a dict with keys: card, date, time, currency, amount, location, approval_code, reference_no.
-    Returns None if parsing fails or required fields are missing.
+    Returns parsed details together with the serialized Groq completion and any
+    extraction error.
     """
     client = Groq(api_key=GROQ_API_KEY)
     try:
@@ -82,34 +131,64 @@ def extract_transaction_details_from_text(text: str) -> dict:
             temperature=0.6,
             max_completion_tokens=2048,
             top_p=0.95,
+            reasoning_effort="none",
             stream=False,
             response_format=ResponseFormatResponseFormatJsonObject(type='json_object'),
             stop=None,
         )
     except APIError as error:
         LOGS.warning("Groq could not generate valid JSON for transaction extraction: %s", error)
-        return None
+        return TransactionExtractionResult(
+            details=None,
+            completion_data=None,
+            error=f"Groq API error: {error}"
+        )
 
-    ai_response = completion.choices[0].message.content
+    completion_data = serialize_completion(completion)
+
+    try:
+        ai_response = completion.choices[0].message.content
+    except Exception as error:
+        return TransactionExtractionResult(
+            details=None,
+            completion_data=completion_data,
+            error=f"Could not read the completion content: {error}"
+        )
 
     try:
         json_decoded = json.loads(ai_response)
-    except Exception:
-        return None
+    except Exception as error:
+        return TransactionExtractionResult(
+            details=None,
+            completion_data=completion_data,
+            error=f"Could not decode the completion content as JSON: {error}"
+        )
 
     # Ensure a valid dictionary was returned before accessing keys
     if not isinstance(json_decoded, dict):
-        return None
+        return TransactionExtractionResult(
+            details=None,
+            completion_data=completion_data,
+            error=f"Expected a JSON object, received {type(json_decoded).__name__}."
+        )
 
     required_keys = [
         'card', 'date', 'time', 'currency', 'amount',
         'location', 'approval_code', 'reference_no'
     ]
 
-    if any(json_decoded.get(k) is None for k in required_keys):
-        return None
+    missing_keys = [key for key in required_keys if json_decoded.get(key) is None]
+    if missing_keys:
+        return TransactionExtractionResult(
+            details=None,
+            completion_data=completion_data,
+            error=f"Missing required values: {', '.join(missing_keys)}"
+        )
 
-    return json_decoded
+    return TransactionExtractionResult(
+        details=json_decoded,
+        completion_data=completion_data
+    )
 
 def get_system_message_for_text():
     return """
