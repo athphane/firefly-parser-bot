@@ -3,6 +3,7 @@ from pyrogram import filters
 from pyrogram.enums import ChatAction
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, ForceReply
 import logging
+import re
 
 from app import FireflyParserBot, TELEGRAM_ADMINS
 from app.database.vendorsdb import VendorsDB
@@ -49,10 +50,11 @@ async def send_vendors_list(message_or_callback, page: int, query: str):
     
     if query:
         # Case-insensitive search in name or aliases
+        escaped_query = re.escape(query)
         filter_ = {
             "$or": [
-                {"name": {"$regex": query, "$options": "i"}},
-                {"aliases": {"$regex": query, "$options": "i"}}
+                {"name": {"$regex": escaped_query, "$options": "i"}},
+                {"aliases": {"$regex": escaped_query, "$options": "i"}}
             ]
         }
         
@@ -143,18 +145,18 @@ async def send_vendors_list(message_or_callback, page: int, query: str):
         await message_or_callback.edit_message_text(text, reply_markup=markup)
 
 
-@FireflyParserBot.on_callback_query(filters.regex(r"^do_nothing"))
+@FireflyParserBot.on_callback_query(filters.regex(r"^do_nothing") & filters.user(TELEGRAM_ADMINS))
 async def do_nothing_callback(_, callback_query: CallbackQuery):
     await callback_query.answer()
 
 
-@FireflyParserBot.on_callback_query(filters.regex(r"^noop$"))
+@FireflyParserBot.on_callback_query(filters.regex(r"^noop$") & filters.user(TELEGRAM_ADMINS))
 async def noop_callback(_, callback_query: CallbackQuery):
     # Handle no-operation callback for disabled buttons
     await callback_query.answer("This button is not active")
 
 
-@FireflyParserBot.on_callback_query(filters.regex(r"^vendors_page:(\d+):(.*)$"))
+@FireflyParserBot.on_callback_query(filters.regex(r"^vendors_page:(\d+):(.*)$") & filters.user(TELEGRAM_ADMINS))
 async def vendors_page_callback(_, callback_query: CallbackQuery):
     # The query may be empty, so use maxsplit=2 and join back if needed
     parts = callback_query.data.split(":", 2)
@@ -277,7 +279,7 @@ def extract_aliases(notes: str) -> list[str]:
     return aliases
 
 
-@FireflyParserBot.on_callback_query(filters.regex(r"^view_vendor:(.+)$"))
+@FireflyParserBot.on_callback_query(filters.regex(r"^view_vendor:(.+)$") & filters.user(TELEGRAM_ADMINS))
 async def view_vendor_callback(_, callback_query: CallbackQuery):
     vendor_id = callback_query.data.split(":", 1)[1]
     db = VendorsDB()
@@ -330,7 +332,7 @@ async def view_vendor_callback(_, callback_query: CallbackQuery):
     await callback_query.answer()
 
 
-@FireflyParserBot.on_callback_query(filters.regex(r"^delete_alias:(.+?):(.+)$"))
+@FireflyParserBot.on_callback_query(filters.regex(r"^delete_alias:(.+?):(.+)$") & filters.user(TELEGRAM_ADMINS))
 async def delete_alias_callback(_, callback_query: CallbackQuery):
     vendor_id, alias_index_str = callback_query.data.split(":", 2)[1:]
     db = VendorsDB()
@@ -372,7 +374,7 @@ async def delete_alias_callback(_, callback_query: CallbackQuery):
     await update_aliases_view(callback_query, vendor)
 
 
-@FireflyParserBot.on_callback_query(filters.regex(r"^add_alias:(.+)$"))
+@FireflyParserBot.on_callback_query(filters.regex(r"^add_alias:(.+)$") & filters.user(TELEGRAM_ADMINS))
 async def add_alias_callback(_, callback_query: CallbackQuery):
     vendor_id = callback_query.data.split(":", 1)[1]
     vendor = VendorsDB().vendors.find_one({"_id": ObjectId(vendor_id)})
@@ -483,7 +485,7 @@ async def handle_add_alias_reply(_, message: Message):
         await message.continue_propagation()
 
 
-@FireflyParserBot.on_callback_query(filters.regex(r"^manage_aliases:(.+)$"))
+@FireflyParserBot.on_callback_query(filters.regex(r"^manage_aliases:(.+)$") & filters.user(TELEGRAM_ADMINS))
 async def manage_aliases_callback(_, callback_query: CallbackQuery):
     vendor_id = callback_query.data.split(":", 1)[1]
     db = VendorsDB()
@@ -497,7 +499,7 @@ async def manage_aliases_callback(_, callback_query: CallbackQuery):
     await callback_query.answer()
 
 
-@FireflyParserBot.on_callback_query(filters.regex(r"^edit_vendor_name:(.+)$"))
+@FireflyParserBot.on_callback_query(filters.regex(r"^edit_vendor_name:(.+)$") & filters.user(TELEGRAM_ADMINS))
 async def edit_vendor_name_callback(_, callback_query: CallbackQuery):
     vendor_id = callback_query.data.split(":", 1)[1]
     db = VendorsDB()
@@ -684,7 +686,7 @@ async def update_aliases_view(callback_query_or_message, vendor):
         await callback_query_or_message.edit_text(text, reply_markup=markup)
 
 
-@FireflyParserBot.on_callback_query(filters.regex(r"^back_to_vendors"))
+@FireflyParserBot.on_callback_query(filters.regex(r"^back_to_vendors") & filters.user(TELEGRAM_ADMINS))
 async def back_to_vendors_callback(_, callback_query: CallbackQuery):
     # Clear any existing reply contexts when returning to main vendors list
     await clear_vendor_contexts(callback_query.message)

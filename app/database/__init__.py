@@ -1,14 +1,17 @@
 import pymongo
 
-from app import MONGO_URL, MONGO_USERNAME, MONGO_PASSWORD, MONGO_DB_NAME
+from app import MONGO_DB_AUTH_SOURCE, MONGO_DB_NAME, MONGO_PASSWORD, MONGO_URL, MONGO_USERNAME
 
 
 def database():
     """Created Database connection"""
-    client = pymongo.MongoClient(
-        MONGO_URL,
-        username=MONGO_USERNAME,
-        password=MONGO_PASSWORD
-    )
+    options = {
+        "username": MONGO_USERNAME,
+        "password": MONGO_PASSWORD,
+    }
+    if MONGO_DB_AUTH_SOURCE:
+        options["authSource"] = MONGO_DB_AUTH_SOURCE
+
+    client = pymongo.MongoClient(MONGO_URL, **options)
     db = client[MONGO_DB_NAME]
     return db

@@ -28,7 +28,9 @@ To get the Firefly Parser Bot up and running, follow these steps:
 
 *   A running instance of [Firefly III](https://www.firefly-iii.org/).
 *   A Telegram Bot Token (obtainable from BotFather on Telegram).
-*   Python 3.8 or higher.
+*   Python 3.12 or higher.
+*   MongoDB (included when using Docker Compose).
+*   A Groq API key.
 
 ### Installation Steps
 
@@ -52,10 +54,10 @@ To get the Firefly Parser Bot up and running, follow these steps:
     cp config.ini.example config.ini
     ```
     Open `config.ini` and update the following sections:
-    *   `[telegram]`: Add your `bot_token`.
-    *   `[firefly]`: Provide your `firefly_iii_url` and `firefly_iii_api_token`.
-    *   `[database]`: Configure your database settings (e.g., SQLite path).
-    *   Adjust other parameters like `default_currency` as needed.
+    *   `[pyrogram]`: Add your Telegram API credentials, bot token, and comma-separated admin user IDs.
+    *   `[mongo]`: Configure the MongoDB connection and optional authentication source.
+    *   `[firefly]`: Provide your Firefly III URL, API key, default account, and request timeout.
+    *   `[ai]`: Add your Groq API key and select the Groq model. The default is `qwen/qwen3.8-27b`.
 
 4.  **Run the Bot:**
     ```bash

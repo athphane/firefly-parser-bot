@@ -1,15 +1,21 @@
-import requests
 import os
+import requests
 
-from app import FIREFLY_BASE_URL, FIREFLY_API_KEY
+from app import FIREFLY_API_KEY, FIREFLY_BASE_URL, FIREFLY_REQUEST_TIMEOUT
 from app.models.transaction_models import Account, Budget, Category, Bill
 
 
 class FireflyApi:
     def __init__(self):
-        self.base_url = FIREFLY_BASE_URL
+        self.base_url = FIREFLY_BASE_URL.rstrip('/')
         self.api_url = self.base_url + '/api/v1'
         self.api_key = FIREFLY_API_KEY
+        self.timeout = FIREFLY_REQUEST_TIMEOUT
+        self.session = requests.Session()
+        self.session.headers.update({
+            'Accept': 'application/json',
+            'Authorization': f'Bearer {self.api_key}',
+        })
 
     def construct_url(self, endpoint: str):
         """
@@ -17,7 +23,7 @@ class FireflyApi:
         :param endpoint: API endpoint
         :return: Full URL
         """
-        return f"{self.api_url}/{endpoint}"
+        return f"{self.api_url}/{endpoint.lstrip('/')}"
 
     def get_json(self, endpoint: str, params: dict = None):
         """
@@ -26,15 +32,11 @@ class FireflyApi:
         :param params: Query parameters
         :return: JSON data
         """
-        headers = {
-            'Authorization': f'Bearer {self.api_key}',
-            'Content-Type': 'application/json'
-        }
-
-        if params:
-            response = requests.get(self.construct_url(endpoint), headers=headers, params=params)
-        else:
-            response = requests.get(self.construct_url(endpoint), headers=headers)
+        response = self.session.get(
+            self.construct_url(endpoint),
+            params=params,
+            timeout=self.timeout,
+        )
 
         if response.status_code == 200:
             try:
@@ -62,13 +64,7 @@ class FireflyApi:
         """
         url = self.construct_url(endpoint)
 
-        headers = {
-            'Accept': 'application/json',
-            'Content-Type': 'application/json',
-            'Authorization': f'Bearer {self.api_key}'
-        }
-
-        response = requests.post(url, headers=headers, json=payload)
+        response = self.session.post(url, json=payload, timeout=self.timeout)
 
         if debug:
             return response
@@ -86,11 +82,7 @@ class FireflyApi:
         :return: Response JSON or raises an exception on failure.
         """
         url = self.construct_url(endpoint)
-        headers = {
-            'Authorization': f'Bearer {self.api_key}',
-            'Content-Type': 'application/json'
-        }
-        response = requests.put(url, headers=headers, json=payload)
+        response = self.session.put(url, json=payload, timeout=self.timeout)
 
         if response.status_code in (200, 204):
             return response.json() if response.status_code == 200 else {"message": "Request successful"}
@@ -105,13 +97,9 @@ class FireflyApi:
         :return: Response JSON or raises an exception on failure.
         """
         url = self.construct_url(endpoint)
-        headers = {
-            'Authorization': f'Bearer {self.api_key}'
-        }
-        
         with open(file_path, 'rb') as file:
             files = {'file': file}
-            response = requests.post(url, headers=headers, files=files)
+            response = self.session.post(url, files=files, timeout=self.timeout)
 
         if response.status_code in (200, 201, 204):
             return response.json() if response.status_code in (200, 201) else {"message": "Request successful"}

@@ -8,7 +8,7 @@ from groq import APIError, Groq
 from groq.types.chat.chat_completion_content_part_image_param import ChatCompletionContentPartImageParam, ImageURL
 from groq.types.chat import ChatCompletionSystemMessageParam, ChatCompletionUserMessageParam, ChatCompletionContentPartTextParam
 from groq.types.chat.completion_create_params import ResponseFormatResponseFormatJsonObject
-from app import GROQ_API_KEY
+from app import GROQ_API_KEY, GROQ_MODEL
 
 LOGS = logging.getLogger(__name__)
 
@@ -44,7 +44,7 @@ def extract_transaction_details_from_image(path) -> TransactionExtractionResult:
     client = Groq(api_key=GROQ_API_KEY)
     try:
         completion = client.chat.completions.create(
-            model="qwen/qwen3.6-27b",
+            model=GROQ_MODEL,
             messages=[
                 ChatCompletionUserMessageParam(role='user', content=[
                     ChatCompletionContentPartTextParam(type='text', text=get_system_message_for_image()),
@@ -123,7 +123,7 @@ def extract_transaction_details_from_text(text: str) -> TransactionExtractionRes
     client = Groq(api_key=GROQ_API_KEY)
     try:
         completion = client.chat.completions.create(
-            model="qwen/qwen3.6-27b",
+            model=GROQ_MODEL,
             messages=[
                 ChatCompletionSystemMessageParam(role='system', content=get_system_message_for_text()),
                 ChatCompletionUserMessageParam(role='user', content=text),
