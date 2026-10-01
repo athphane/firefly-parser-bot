@@ -1,8 +1,18 @@
-import os
 import requests
+import logging
+import re
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
-from app import FIREFLY_API_KEY, FIREFLY_BASE_URL, FIREFLY_REQUEST_TIMEOUT
+from app import (
+    FIREFLY_API_KEY,
+    FIREFLY_BASE_URL,
+    FIREFLY_ERROR_ON_DUPLICATE,
+    FIREFLY_REQUEST_TIMEOUT,
+)
 from app.models.transaction_models import Account, Budget, Category, Bill
+
+LOGS = logging.getLogger(__name__)
 
 
 class FireflyApi:
@@ -16,6 +26,37 @@ class FireflyApi:
             'Accept': 'application/json',
             'Authorization': f'Bearer {self.api_key}',
         })
+        retry_policy = Retry(
+            total=3,
+            connect=3,
+            read=3,
+            status=3,
+            backoff_factor=0.5,
+            status_forcelist=(429, 500, 502, 503, 504),
+            allowed_methods=frozenset({'GET', 'PUT'}),
+            respect_retry_after_header=True,
+        )
+        adapter = HTTPAdapter(max_retries=retry_policy)
+        self.session.mount('https://', adapter)
+        self.session.mount('http://', adapter)
+
+    @staticmethod
+    def _response_json(response: requests.Response, success_codes: tuple[int, ...]):
+        if response.status_code not in success_codes:
+            # Keep diagnostics useful without sending an arbitrarily large HTML
+            # error page back through Telegram.
+            body = response.text.strip()[:1000]
+            raise RuntimeError(
+                f"Firefly API returned HTTP {response.status_code}: {body or 'empty response'}"
+            )
+        if response.status_code == 204:
+            return None
+        try:
+            return response.json()
+        except requests.exceptions.JSONDecodeError as error:
+            raise RuntimeError(
+                f"Firefly API returned invalid JSON for HTTP {response.status_code}."
+            ) from error
 
     def construct_url(self, endpoint: str):
         """
@@ -38,14 +79,30 @@ class FireflyApi:
             timeout=self.timeout,
         )
 
-        if response.status_code == 200:
+        return self._response_json(response, (200,))
+
+    def get_all_pages(self, endpoint: str, params: dict = None) -> list[dict]:
+        """Fetch every page from a Firefly collection endpoint."""
+        page_params = dict(params or {})
+        page_params.setdefault('limit', 100)
+        page = 1
+        items = []
+
+        while True:
+            page_params['page'] = page
+            response = self.get_json(endpoint, page_params)
+            if not isinstance(response, dict) or not isinstance(response.get('data'), list):
+                raise RuntimeError(f"Firefly returned an invalid collection for {endpoint}.")
+            items.extend(response['data'])
+            pagination = response.get('meta', {}).get('pagination', {})
             try:
-                return response.json()
-            except ValueError:
-                raise Exception(f"Error: 200 OK but invalid JSON - {response.text}") from None
-        else:
-            raise Exception(f"Error: {response.status_code} - {response.text}")
-        
+                total_pages = max(1, int(pagination.get('total_pages') or 1))
+            except (TypeError, ValueError) as error:
+                raise RuntimeError(f"Firefly returned invalid pagination for {endpoint}.") from error
+            if page >= total_pages:
+                return items
+            page += 1
+
     def transaction_show_url(self, transaction_id: str):
         """
         Get the URL to show a transaction in Firefly.
@@ -54,10 +111,9 @@ class FireflyApi:
         """
         return f"{self.base_url}/transactions/show/{transaction_id}"
 
-    def post_json(self, endpoint: str, payload: dict, debug: bool = False):
+    def post_json(self, endpoint: str, payload: dict):
         """
         Send a POST request to the Firefly API.
-        :param debug:
         :param endpoint: API endpoint
         :param payload: JSON payload
         :return: Response JSON or raises an exception on failure.
@@ -66,13 +122,7 @@ class FireflyApi:
 
         response = self.session.post(url, json=payload, timeout=self.timeout)
 
-        if debug:
-            return response
-
-        if response.status_code in (200, 201):
-            return response.json()
-        else:
-            raise Exception(f"POST request failed: {response.status_code} - {response.text}")
+        return self._response_json(response, (200, 201))
 
     def put_json(self, endpoint: str, payload: dict):
         """
@@ -84,10 +134,7 @@ class FireflyApi:
         url = self.construct_url(endpoint)
         response = self.session.put(url, json=payload, timeout=self.timeout)
 
-        if response.status_code in (200, 204):
-            return response.json() if response.status_code == 200 else {"message": "Request successful"}
-        else:
-            raise Exception(f"PUT request failed: {response.status_code} - {response.text}")
+        return self._response_json(response, (200, 204))
 
     def post_file(self, endpoint: str, file_path: str):
         """
@@ -98,13 +145,12 @@ class FireflyApi:
         """
         url = self.construct_url(endpoint)
         with open(file_path, 'rb') as file:
-            files = {'file': file}
-            response = self.session.post(url, files=files, timeout=self.timeout)
+            response = self.session.post(
+                url, data=file, headers={'Content-Type': 'application/octet-stream'},
+                timeout=self.timeout,
+            )
 
-        if response.status_code in (200, 201, 204):
-            return response.json() if response.status_code in (200, 201) else {"message": "Request successful"}
-        else:
-            raise Exception(f"POST file request failed: {response.status_code} - {response.text}")
+        return self._response_json(response, (200, 201, 204))
 
     def create_attachment(self, transaction_id: str, filename: str):
         """
@@ -115,7 +161,7 @@ class FireflyApi:
         """
         payload = {
             "filename": filename,
-            "attachable_type": "Transaction",
+            "attachable_type": "TransactionJournal",
             "attachable_id": transaction_id
         }
         return self.post_json('attachments', payload)
@@ -164,40 +210,16 @@ class FireflyApi:
 
         return self.get_json('autocomplete/accounts', params)
 
-    def transactions_from_account(self, account_id: str):
-        """
-        Get transactions from a specific account
-        :param account_id:
-        :return:
-        """
-        return self.get_json(f"/accounts/{account_id}/transactions")
-
     def accounts(self, account_type: str, get_all: bool = False):
         params = {
             'type': account_type,
             'limit': 20
         }
 
+        if get_all:
+            return self.get_all_pages('accounts', params)
         response = self.get_json(endpoint='accounts', params=params)
-
-        if not get_all:
-            try:
-                return response['data']
-            except KeyError:
-                return []
-
-        accounts = response['data']
-        current_page = response['meta']['pagination']['current_page'] or 1
-        total_pages = response['meta']['pagination']['total_pages'] or 1
-
-        while current_page < total_pages:
-            current_page += 1
-            params['page'] = current_page
-
-            response = self.get_json(endpoint='accounts', params=params)
-            accounts += response['data']
-
-        return accounts
+        return response.get('data', [])
 
     def update_account_name(self, account_id: int, new_name: str):
         """
@@ -216,7 +238,12 @@ class FireflyApi:
         :param aliases: The list of aliases to set for the account.
         :return: Response JSON or raises an exception on failure.
         """
-        payload = {"notes": self._generate_alias_notes(aliases)}
+        account = self.get_json(f"accounts/{account_id}")
+        try:
+            current_notes = account['data']['attributes'].get('notes') or ''
+        except (KeyError, TypeError) as error:
+            raise RuntimeError("Firefly returned invalid account details.") from error
+        payload = {"notes": self._merge_alias_notes(current_notes, aliases)}
         return self.put_json(f"accounts/{account_id}", payload)
 
     @staticmethod
@@ -231,6 +258,17 @@ class FireflyApi:
         aliases_block = "\n".join(aliases)
         return f"*START:ALIASES*\n{aliases_block}\n*END:ALIASES*"
 
+    @classmethod
+    def _merge_alias_notes(cls, notes: str, aliases: list[str]) -> str:
+        """Replace the bot-managed alias block without destroying user notes."""
+        marker_pattern = re.compile(
+            r"(?:^|\n)\*START:ALIASES\*.*?\*END:ALIASES\*(?:\n|$)",
+            re.DOTALL,
+        )
+        preserved_notes = marker_pattern.sub("\n", notes or '').strip()
+        alias_notes = cls._generate_alias_notes(aliases)
+        return "\n\n".join(part for part in (preserved_notes, alias_notes) if part)
+
     def get_transactions_from_account(self, account_id: str):
         """
         Get transactions from a specific account
@@ -244,42 +282,33 @@ class FireflyApi:
         Get all budgets
         :return: JSON data
         """
-        response = self.get_json('budgets')
-        budgets = []
-        for budget in response['data']:
-            budgets.append(Budget(
-                id=budget['id'],
-                name=budget['attributes']['name']
-            ))
-        return budgets
+        return self._named_resources('budgets', Budget)
 
     def get_categories(self) -> list[Category]:
         """
         Get all categories
         :return: JSON data
         """
-        response = self.get_json('categories')
-        categories = []
-        for category in response['data']:
-            categories.append(Category(
-                id=category['id'],
-                name=category['attributes']['name']
-            ))
-        return categories
+        return self._named_resources('categories', Category)
 
     def get_bills(self) -> list[Bill]:
         """
         Get all bills
         :return: JSON data
         """
-        response = self.get_json('bills')
-        bills = []
-        for bill in response['data']:
-            bills.append(Bill(
-                id=bill['id'],
-                name=bill['attributes']['name']
-            ))
-        return bills
+        return self._named_resources('bills', Bill)
+
+    def _named_resources(self, endpoint: str, model_type):
+        resources = []
+        for resource in self.get_all_pages(endpoint):
+            try:
+                resources.append(model_type(
+                    id=str(resource['id']),
+                    name=str(resource['attributes']['name']),
+                ))
+            except (KeyError, TypeError):
+                LOGS.warning("Skipping malformed Firefly %s resource", endpoint)
+        return resources
 
     def get_asset_accounts(self) -> list[Account]:
         """
@@ -349,7 +378,7 @@ class FireflyApi:
             ],
             "apply_rules": True,
             "fire_webhooks": False,
-            "error_if_duplicate_hash": False
+            "error_if_duplicate_hash": FIREFLY_ERROR_ON_DUPLICATE,
         }
 
         return self.post_json('transactions', payload=payload)
