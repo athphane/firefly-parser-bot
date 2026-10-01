@@ -1,15 +1,18 @@
-from pyrogram import filters
+from pyrogram import filters, StopPropagation
 from pyrogram.types import Message
+import asyncio
 import calendar
 import csv
-import os
+from io import BytesIO, StringIO
 from datetime import datetime, timezone
-from app import FireflyParserBot, TELEGRAM_ADMINS, LOGS
+from app import EXCHANGE_RATES, FireflyParserBot, LOCAL_CURRENCY, TELEGRAM_ADMINS, LOGS
 from app.firefly.firefly import FireflyApi
+from app.plugins.vendors import clear_vendor_contexts
 from dataclasses import dataclass, asdict
+from decimal import Decimal, InvalidOperation
 from typing import List, Optional
 
-MVR_PER_USD = 15.42
+LOCAL_PER_USD = EXCHANGE_RATES.get('USD')
 
 
 @dataclass
@@ -29,9 +32,9 @@ class ForeignTransaction:
     date: str
     description: str
     foreign_currency: str
-    foreign_amount: float
-    local_amount: float
-    usd_equivalent: float
+    foreign_amount: Decimal
+    local_amount: Decimal
+    usd_equivalent: Decimal
 
 
 def parse_month(month_arg: str) -> Optional[int]:
@@ -133,18 +136,36 @@ def fetch_and_process_transactions(api: FireflyApi, start_date: datetime, end_da
         'start': start_date.strftime('%Y-%m-%d'),
         'end': end_date.strftime('%Y-%m-%d')
     }
-    transactions_response = api.get_json('transactions', params)
+    transaction_records = api.get_all_pages('transactions', params)
 
     foreign_transactions = []
-    for transaction_data in transactions_response['data']:
-        transaction = transaction_data['attributes']
-        for tx in transaction['transactions']:
+    for transaction_data in transaction_records:
+        transaction = transaction_data.get('attributes', {})
+        for tx in transaction.get('transactions', []):
             if tx.get('foreign_amount') and tx.get('foreign_currency_code'):
-                foreign_currency = tx['foreign_currency_code']
-                foreign_amount = float(tx['foreign_amount'])
-                local_amount = float(tx['amount'])
+                foreign_currency = str(tx['foreign_currency_code']).upper()
+                try:
+                    foreign_amount = Decimal(str(tx['foreign_amount']))
+                    local_amount = Decimal(str(tx['amount']))
+                except (InvalidOperation, TypeError, ValueError):
+                    LOGS.warning("Skipping transaction with invalid amounts: %r", tx)
+                    continue
+                if not foreign_amount.is_finite() or not local_amount.is_finite():
+                    LOGS.warning("Skipping transaction with non-finite amounts")
+                    continue
+                source_currency = str(tx.get('currency_code') or LOCAL_CURRENCY).upper()
+                if source_currency != LOCAL_CURRENCY:
+                    try:
+                        local_amount *= EXCHANGE_RATES[source_currency]
+                    except KeyError as error:
+                        raise ValueError(f"No exchange rate is configured for {source_currency}.") from error
 
-                usd_equiv = foreign_amount if foreign_currency == 'USD' else local_amount / MVR_PER_USD
+                if foreign_currency == 'USD':
+                    usd_equiv = foreign_amount
+                elif LOCAL_PER_USD is not None:
+                    usd_equiv = local_amount / LOCAL_PER_USD
+                else:
+                    raise ValueError("USD exchange rate is required for foreign summaries.")
 
                 foreign_transactions.append(ForeignTransaction(
                     date=tx['date'],
@@ -167,15 +188,15 @@ def filter_transactions_by_currency(transactions: List[ForeignTransaction], curr
     return [t for t in transactions if t.foreign_currency == currency]
 
 
-def calculate_total_usd(transactions: List[ForeignTransaction]) -> float:
+def calculate_total_usd(transactions: List[ForeignTransaction]) -> Decimal:
     """Calculates the total USD equivalent for a list of transactions."""
-    return sum(t.usd_equivalent for t in transactions)
+    return sum((t.usd_equivalent for t in transactions), Decimal('0'))
 
 
 def format_summary_message(
         transactions: List[ForeignTransaction],
         display_period: str,
-        total_usd: float
+        total_usd: Decimal
 ) -> str:
     """Formats the summary message with transaction details."""
     msg = f"**Foreign Transactions for {display_period}**\n\n"
@@ -189,7 +210,7 @@ def format_summary_message(
         if tx.foreign_currency != 'USD':
             msg += (f"• {tx.date[:10]}: {tx.description} - "
                     f"{tx.foreign_amount:.2f} {tx.foreign_currency} "
-                    f"(MVR {tx.local_amount:.2f}, USD {tx.usd_equivalent:.2f})\n")
+                    f"({LOCAL_CURRENCY} {tx.local_amount:.2f}, USD {tx.usd_equivalent:.2f})\n")
         else:
             msg += f"• {tx.date[:10]}: {tx.description} - {tx.foreign_amount:.2f} USD\n"
 
@@ -203,17 +224,15 @@ async def generate_and_send_csv(message: Message, transactions: List[ForeignTran
                                 end_date: datetime):
     """Generates a CSV file and sends it as a document."""
     csv_filename = f"foreign_transactions_{start_date.strftime('%Y-%m-%d')}_to_{end_date.strftime('%Y-%m-%d')}.csv"
-    csv_path = os.path.join("downloads", csv_filename)
-    os.makedirs(os.path.dirname(csv_path), exist_ok=True)
-
-    with open(csv_path, 'w', newline='') as csvfile:
+    with StringIO(newline='') as csvfile:
         fieldnames = ['date', 'description', 'foreign_currency', 'foreign_amount', 'local_amount', 'usd_equivalent']
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         writer.writeheader()
         for tx in transactions:
             writer.writerow(asdict(tx))
-
-    await message.reply_document(csv_path, caption="Full transaction data exported to CSV")
+        with BytesIO(csvfile.getvalue().encode('utf-8')) as document:
+            document.name = csv_filename
+            await message.reply_document(document, caption="Full transaction data exported to CSV")
 
 
 @FireflyParserBot.on_message(filters.private & filters.user(TELEGRAM_ADMINS) & filters.command(["foreignsum"]), group=1)
@@ -229,15 +248,13 @@ async def foreign_sum(_, message: Message):
     - Dates for range should be in YYYY-MM-DD format.
     """
     # Clear any existing reply contexts
-    if hasattr(FireflyParserBot, '_add_alias_context'):
-        FireflyParserBot._add_alias_context = None
-    if hasattr(FireflyParserBot, '_edit_vendor_name_context'):
-        FireflyParserBot._edit_vendor_name_context = None
-        
+    await clear_vendor_contexts(message)
+
     args = parse_arguments(message.text.split())
 
     if args.error_message:
         await message.reply(args.error_message)
+        await message.stop_propagation()
         return
 
     pre_message = f"Calculating foreign transaction totals for {args.display_period}..."
@@ -248,7 +265,12 @@ async def foreign_sum(_, message: Message):
 
     try:
         api = FireflyApi()
-        all_foreign_transactions = fetch_and_process_transactions(api, args.start_date, args.end_date)
+        all_foreign_transactions = await asyncio.to_thread(
+            fetch_and_process_transactions,
+            api,
+            args.start_date,
+            args.end_date,
+        )
         filtered_transactions = filter_transactions_by_currency(all_foreign_transactions, args.filter_currency)
         total_usd = calculate_total_usd(filtered_transactions)
 
@@ -256,6 +278,7 @@ async def foreign_sum(_, message: Message):
             await status_message.edit_text(
                 f"No foreign transactions found for {args.display_period}" +
                 (f" with currency {args.filter_currency}" if args.filter_currency else "."))
+            await message.stop_propagation()
             return
 
         summary_message = format_summary_message(filtered_transactions, args.display_period, total_usd)
@@ -269,8 +292,12 @@ async def foreign_sum(_, message: Message):
         if args.export_csv:
             await generate_and_send_csv(message, filtered_transactions, args.start_date, args.end_date)
 
-    except Exception as e:
-        LOGS.error(f"Error in foreignsum command: {e}")
-        await status_message.edit_text(f"An error occurred while calculating foreign transactions: {e}")
+    except StopPropagation:
+        raise
+    except Exception:
+        LOGS.exception("Error in foreignsum command")
+        await status_message.edit_text(
+            "An error occurred while calculating foreign transactions. Check the bot logs for details."
+        )
 
     await message.stop_propagation()

@@ -1,15 +1,13 @@
 from pyrogram import filters
 from pyrogram.types import Message
-from app import FireflyParserBot, TELEGRAM_ADMINS
+from app import EXCHANGE_RATES, FireflyParserBot, LOCAL_CURRENCY, TELEGRAM_ADMINS
+from app.plugins.vendors import clear_vendor_contexts
 
 @FireflyParserBot.on_message(filters.private & filters.user(TELEGRAM_ADMINS) & filters.command(["help"]), group=1)
 async def help_command(_, message: Message):
     # Clear any existing reply contexts
-    if hasattr(FireflyParserBot, '_add_alias_context'):
-        FireflyParserBot._add_alias_context = None
-    if hasattr(FireflyParserBot, '_edit_vendor_name_context'):
-        FireflyParserBot._edit_vendor_name_context = None
-        
+    await clear_vendor_contexts(message)
+
     help_text = (
         "**Firefly Parser Bot Help**\n\n"
         "Type `/start` to see a welcome message.\n\n"
@@ -21,7 +19,8 @@ async def help_command(_, message: Message):
         "• `/vendors [search]` — List all vendors. Optionally, add a search term to filter vendors by name or alias. Results are paginated.\n"
         "• `/syncvendors` — Synchronize vendors with Firefly III. Adds new vendors, updates aliases, and removes vendors no longer present in Firefly.\n"
         "• `/help` - Show this help message.\n"
-        "\nAll results are consolidated in USD using a fixed exchange rate (15.42 MVR per USD)."
+        f"\nForeign totals use the configured exchange rate "
+        f"({EXCHANGE_RATES.get('USD', 'not configured')} {LOCAL_CURRENCY} per USD)."
     )
     await message.reply(help_text)
     await message.stop_propagation()
@@ -29,11 +28,8 @@ async def help_command(_, message: Message):
 @FireflyParserBot.on_message(filters.private & filters.user(TELEGRAM_ADMINS) & filters.command(["foreignsum_help"]), group=1)
 async def foreignsum_help_command(_, message: Message):
     # Clear any existing reply contexts
-    if hasattr(FireflyParserBot, '_add_alias_context'):
-        FireflyParserBot._add_alias_context = None
-    if hasattr(FireflyParserBot, '_edit_vendor_name_context'):
-        FireflyParserBot._edit_vendor_name_context = None
-        
+    await clear_vendor_contexts(message)
+
     help_text = (
         "**/foreignsum Command Usage**\n\n"
         "This command summarizes your foreign transactions.\n\n"
@@ -45,7 +41,8 @@ async def foreignsum_help_command(_, message: Message):
         "• `/foreignsum range 2025-06-01 2025-06-15` - Show transactions for a date range\n"
         "• `/foreignsum range 2025-06-01 2025-06-15 USD` - Show USD transactions for a date range\n"
         "• Add `csv` to any command to export transactions to a CSV file, e.g., `/foreignsum Jun 2025 csv`\n\n"
-        "All results are consolidated in USD using a fixed exchange rate (15.42 MVR per USD)."
+        f"Foreign totals use the configured exchange rate "
+        f"({EXCHANGE_RATES.get('USD', 'not configured')} {LOCAL_CURRENCY} per USD)."
     )
     await message.reply(help_text)
     await message.stop_propagation()

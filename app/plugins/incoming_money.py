@@ -1,4 +1,5 @@
-from datetime import datetime
+import asyncio
+from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 import logging
 
@@ -9,6 +10,8 @@ from pyrogram.types import CallbackQuery, ForceReply, InlineKeyboardButton, Inli
 from app import FireflyParserBot, TELEGRAM_ADMINS
 from app.firefly.firefly import FireflyApi
 from app.models.transaction_models import Account
+from app.plugins.transaction_customization import discard_user_contexts
+from app.plugins.vendors import clear_vendor_contexts
 
 LOGS = logging.getLogger(__name__)
 
@@ -44,16 +47,8 @@ def _clear_context(user_id: int) -> None:
 
 
 async def _clear_other_reply_contexts(message: Message) -> None:
-    for attr in ['_add_alias_context', '_edit_vendor_name_context', '_add_tag_context']:
-        ctx = getattr(FireflyParserBot, attr, None)
-        if ctx and ctx.get('reply_message_id'):
-            try:
-                await message.chat.delete_messages(ctx['reply_message_id'])
-            except Exception:
-                pass
-
-        if hasattr(FireflyParserBot, attr):
-            setattr(FireflyParserBot, attr, None)
+    await clear_vendor_contexts(message)
+    discard_user_contexts(message.from_user.id)
 
 
 async def _delete_reply_prompt(message: Message, context: dict | None) -> None:
@@ -61,7 +56,7 @@ async def _delete_reply_prompt(message: Message, context: dict | None) -> None:
         return
 
     try:
-        await message.chat.delete_messages(context['reply_message_id'])
+        await message._client.delete_messages(message.chat.id, context['reply_message_id'])
     except Exception:
         pass
 
@@ -153,7 +148,7 @@ async def _start_income_flow(message: Message, user_id: int, edit_existing: bool
     firefly_api = FireflyApi()
 
     try:
-        revenue_accounts = firefly_api.get_revenue_accounts()
+        revenue_accounts = await asyncio.to_thread(firefly_api.get_revenue_accounts)
     except Exception as e:
         LOGS.error(f"Error fetching revenue accounts: {e}")
         error_text = "Failed to fetch revenue accounts from Firefly III. Please try again later."
@@ -254,8 +249,12 @@ async def select_revenue_account(_, callback_query: CallbackQuery) -> None:
     firefly_api = FireflyApi()
 
     try:
-        revenue_accounts = firefly_api.get_revenue_accounts()
-        asset_accounts = firefly_api.get_asset_accounts()
+        revenue_accounts, asset_accounts = await asyncio.to_thread(
+            lambda: (
+                firefly_api.get_revenue_accounts(),
+                firefly_api.get_asset_accounts(),
+            ),
+        )
     except Exception as e:
         LOGS.error(f"Error fetching accounts for incoming transaction: {e}")
         await callback_query.message.edit_text("Failed to fetch accounts from Firefly III. Please try again later.")
@@ -294,7 +293,7 @@ async def select_asset_account(_, callback_query: CallbackQuery) -> None:
     firefly_api = FireflyApi()
 
     try:
-        asset_accounts = firefly_api.get_asset_accounts()
+        asset_accounts = await asyncio.to_thread(firefly_api.get_asset_accounts)
     except Exception as e:
         LOGS.error(f"Error fetching asset accounts for incoming transaction: {e}")
         await callback_query.message.edit_text("Failed to fetch asset accounts from Firefly III. Please try again later.")
@@ -314,7 +313,7 @@ async def select_asset_account(_, callback_query: CallbackQuery) -> None:
     await _prompt_for_amount(callback_query.message, callback_query.from_user.id, context)
 
 
-@FireflyParserBot.on_message(filters.private & filters.text & filters.user(TELEGRAM_ADMINS), group=10)
+@FireflyParserBot.on_message(filters.private & filters.user(TELEGRAM_ADMINS), group=10)
 async def handle_income_reply(client: FireflyParserBot, message: Message) -> None:
     context = _get_context(message.from_user.id)
     if not context or context.get('state') not in {'awaiting_amount', 'awaiting_description'}:
@@ -323,6 +322,11 @@ async def handle_income_reply(client: FireflyParserBot, message: Message) -> Non
 
     if context.get('reply_message_id') != message.reply_to_message_id:
         await message.continue_propagation()
+        return
+
+    if not message.text:
+        await message.reply("Please reply with text to this prompt.")
+        await message.stop_propagation()
         return
 
     original_message = await client.get_messages(message.chat.id, context['message_id'])
@@ -379,16 +383,35 @@ async def create_income_transaction(_, callback_query: CallbackQuery) -> None:
         return
 
     firefly_api = FireflyApi()
+    user_id = callback_query.from_user.id
+    context['state'] = 'creating'
+    # Reuse the date after an ambiguous failure so duplicate protection sees
+    # the same transaction when the user retries this confirmation.
+    context.setdefault('date', datetime.now(timezone.utc).isoformat(timespec='seconds'))
+    _set_context(user_id, context)
 
     try:
-        response = firefly_api.create_incoming_transaction(
+        response = await asyncio.to_thread(
+            firefly_api.create_incoming_transaction,
             revenue_account_id=context['revenue_account_id'],
             asset_account_id=context['asset_account_id'],
             amount=context['amount'],
             description=context['description'],
-            date=datetime.now().isoformat(timespec='seconds')
+            date=context['date'],
         )
+    except Exception:
+        LOGS.exception("Error creating incoming transaction")
+        context['state'] = 'confirm'
+        _set_context(user_id, context)
+        await callback_query.message.edit_text(
+            f"{_summary_text(context)}\n\nFailed to create the transaction. Please try again.",
+            reply_markup=_confirm_markup()
+        )
+        return
 
+    # The write succeeded. A failed Telegram edit must never re-enable Create.
+    _clear_context(user_id)
+    try:
         transaction_id = response['data']['id']
         transaction = response['data']['attributes']['transactions'][0]
         link = firefly_api.transaction_show_url(transaction_id)
@@ -396,7 +419,7 @@ async def create_income_transaction(_, callback_query: CallbackQuery) -> None:
         details = (
             "**Incoming transaction created!**\n"
             f"**Description:** {transaction.get('description')}\n"
-            f"**Amount:** {float(transaction.get('amount')):.2f} {transaction.get('currency_code')}\n"
+            f"**Amount:** {Decimal(str(transaction.get('amount'))):.2f} {transaction.get('currency_code')}\n"
             f"**Date & Time:** {transaction.get('date')}\n"
             f"**Source:** {transaction.get('source_name')}\n"
             f"**Destination:** {transaction.get('destination_name')}"
@@ -406,12 +429,10 @@ async def create_income_transaction(_, callback_query: CallbackQuery) -> None:
         ])
 
         await callback_query.message.edit_text(details, reply_markup=markup)
-        _clear_context(callback_query.from_user.id)
-    except Exception as e:
-        LOGS.error(f"Error creating incoming transaction: {e}")
-        await callback_query.message.edit_text(
-            f"{_summary_text(context)}\n\nFailed to create the transaction. Please try again.",
-            reply_markup=_confirm_markup()
+    except Exception:
+        LOGS.exception("Income transaction was created but its confirmation failed")
+        await callback_query.message.reply(
+            "The income transaction was created in Firefly III, but I could not display its details."
         )
 
 
