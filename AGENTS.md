@@ -4,17 +4,19 @@
 - Install deps: `pip install -r requirements.txt`
 - Run bot locally: `python -m app`
 - Run with Docker services: `docker compose up --build` (starts app + MongoDB)
-- There is no configured lint/typecheck/test toolchain in repo config.
+- Run tests: `python -m unittest discover -s tests -v`
+- There is no configured lint/typecheck toolchain in repo config.
 
 ## Config + runtime gotchas
 - `app/__init__.py` reads `config.ini` at import time; most modules import `app`, so missing/invalid config fails early.
-- `TELEGRAM_ADMINS` is parsed as comma-separated ints with no fallback; blank or non-numeric values crash startup.
-- Logging writes to `logs/app.log` via `TimedRotatingFileHandler`; ensure `logs/` exists for local non-Docker runs.
-- Local DB connection ignores `mongo.auth_source` from `config.ini`; only URL/username/password/db_name are used in `app/database/__init__.py`.
+- `TELEGRAM_ADMINS` requires at least one comma-separated integer ID; invalid/empty lists fail with a configuration error.
+- Logging creates `logs/` and writes `logs/app.log` via `TimedRotatingFileHandler`, falling back to console logging if the directory is unwritable.
+- `config.ini`, `logs/`, and `workdir/` default to repository-relative paths and support `FIREFLY_PARSER_*` environment overrides. Startup creates the session directory.
+- Local DB authentication honors `mongo.auth_source`; use `admin` for the bundled Docker MongoDB root user.
 
 ## Real entrypoints and structure
 - Process entrypoint is `app/__main__.py` -> `FireflyParserBot.run()`.
-- Bot client is configured in `app/fireflybot.py` with Pyrogram plugin autoload from `app/plugins` and `workdir="./workdir"`.
+- Bot client is configured in `app/fireflybot.py` with Pyrogram plugin autoload from `app/plugins`, a configured session directory, and one dispatcher worker.
 - Transaction creation/parsing flow is centered in:
   - `app/plugins/transaction_parser.py` (Telegram handlers)
   - `app/plugins/transaction_utils.py` (LLM extraction helpers)
@@ -28,4 +30,6 @@
 - When adding new text/reply handlers, keep them ahead of `group=100` parser handlers or explicitly stop propagation, or user replies may be parsed as transactions.
 
 ## Known maintenance note
-- `vendor_test.py` is a standalone script, not a test framework suite; treat it as manual smoke-check code.
+- Run tests with `venv/bin/python -m unittest discover -s tests -v` when `python` is unavailable. Tests use isolated configuration and mocked external services.
+- Receipt attachments use transaction journal IDs; transaction links use group IDs. Upload file bodies as raw binary, never multipart.
+- Customization only supports groups with one split. Edit groups with multiple splits directly in Firefly to avoid dropping other splits.

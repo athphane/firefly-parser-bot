@@ -8,7 +8,7 @@ The `firefly-parser-bot` is a Python-based Telegram bot designed to automate the
 
 *   **SMS Transaction Parsing:** Automatically extracts key information like amount, currency, vendor, and transaction type from bank SMS messages.
 *   **Firefly III Integration:** Seamlessly creates new transactions in your Firefly III instance.
-*   **Vendor Mapping:** Maps parsed vendor names to pre-configured Firefly III asset accounts for accurate categorization.
+*   **Vendor Mapping:** Maps parsed vendor names to Firefly III expense accounts for accurate categorization.
 *   **Telegram Interface:** Interact with the bot directly through Telegram for convenience and real-time feedback.
 *   **Extensible Plugin System:** Modular design allows for easy addition of new parsing rules or functionalities.
 
@@ -16,7 +16,7 @@ The `firefly-parser-bot` is a Python-based Telegram bot designed to automate the
 
 1.  **Forward SMS:** You forward a transaction SMS from your bank to the Telegram bot.
 2.  **Parse & Extract:** The bot utilizes a sophisticated parsing engine (`transaction_parser.py`) to identify and extract crucial details from the SMS text.
-3.  **Categorize & Map:** It queries a local database (`vendorsdb.py`) to match the extracted vendor/merchant name with your defined Firefly III asset accounts.
+3.  **Categorize & Map:** It queries a local database (`vendorsdb.py`) to match the extracted vendor/merchant name with your defined Firefly III expense accounts.
 4.  **Create Transaction:** The bot then communicates with your Firefly III instance via its API (`firefly.py`) to create a new transaction record.
 5.  **Confirmation:** You receive instant feedback on Telegram, confirming the successful creation of the transaction or notifying you of any issues.
 
@@ -57,7 +57,8 @@ To get the Firefly Parser Bot up and running, follow these steps:
     *   `[pyrogram]`: Add your Telegram API credentials, bot token, and comma-separated admin user IDs.
     *   `[mongo]`: Configure the MongoDB connection and optional authentication source.
     *   `[firefly]`: Provide your Firefly III URL, API key, default account, and request timeout.
-    *   `[ai]`: Add your Groq API key and select the Groq model. The default is `qwen/qwen3.8-27b`.
+    *   `[exchange_rates]`: Configure the local currency and local-currency value of each supported foreign currency. Unknown currencies are rejected instead of being recorded at a false 1:1 rate.
+    *   `[ai]`: Add your Groq API key and select the Groq model. Rate limits default to `requests_per_minute = 30`, `tokens_per_minute = 8000`, and `tokens_per_day = 200000`. Set `image_tokens` for your model's receipt image cost; the default is `2048` for `qwen/qwen3.8-27b` ([Groq vision documentation](https://console.groq.com/docs/vision)).
 
 4.  **Run the Bot:**
     ```bash
@@ -65,9 +66,86 @@ To get the Firefly Parser Bot up and running, follow these steps:
     ```
     Your bot should now be running and accessible via Telegram.
 
+    The bot resolves `config.ini`, `logs/`, and `workdir/` relative to the
+    repository directory, so it can be launched from another working directory.
+    Set `FIREFLY_PARSER_CONFIG`, `FIREFLY_PARSER_WORKDIR`, or
+    `FIREFLY_PARSER_LOG_DIR` to override those locations.
+
+    Incoming messages and callbacks are processed one at a time in Telegram
+    update order. Text and receipt extraction share a Groq limiter. Before each
+    attempt it reserves a conservative input estimate plus the maximum output,
+    then replaces that reservation with the completion's reported token usage.
+    Calls wait until both the minute and daily budgets have room. Daily usage
+    uses a rolling 24-hour window; reaching that budget can delay the entire
+    queue until earlier usage expires. Oversized messages are rejected without
+    calling Groq. Waits are recorded in the application log.
+
+    Usage and cooldowns are saved in `workdir/groq-rate-limit.json`, so keep
+    that file across restarts. Run one bot instance with this state directory.
+    Other applications using the same Groq organization can still consume its
+    shared limits. On a 429 response, the bot honors `Retry-After` and retries
+    through the limiter, up to three total attempts
+    ([Groq rate limit documentation](https://console.groq.com/docs/rate-limits)).
+    Existing configurations receive the default limits automatically;
+    the former `max_concurrency` setting is no longer used.
+
+### Docker runtime permissions
+
+MongoDB data is stored in the Compose `mongo-data` volume. Keep this volume
+across rebuilds; `docker compose down -v` removes it.
+
+When upgrading an existing installation that used MongoDB's anonymous volume,
+back it up before recreating the database container. Stop the bot, export the
+database, then restore it into the new named volume:
+
+```bash
+docker compose stop app
+docker compose exec -T mongodb mongodump --username admin --password password --authenticationDatabase admin --archive > mongo-backup.archive
+docker compose up -d --wait mongodb
+docker compose exec -T mongodb mongorestore --username admin --password password --authenticationDatabase admin --archive < mongo-backup.archive
+```
+
+Use your configured MongoDB credentials if they differ from the bundled defaults.
+Keep the backup until you have verified the restored vendor mappings.
+
+Start or rebuild the Compose services with:
+
+```bash
+docker compose up -d --build
+```
+
+The container entrypoint starts as root to make the mounted `workdir/`, `logs/`,
+and `downloads/` directories and existing files writable by the `app` user
+(UID/GID 1000). It then switches to that user before starting the bot. This
+repairs ownership left by earlier containers and preserves the Telegram session,
+SQLite journal files, logs, and Groq usage state. Runtime path overrides for
+`FIREFLY_PARSER_WORKDIR` and `FIREFLY_PARSER_LOG_DIR` are also honored.
+
+If you override the container user, prepare the mounted directories and files
+for that user on the host; startup cannot repair ownership without root access.
+
+Transaction customization supports groups containing one transaction split.
+Edit groups with multiple splits directly in Firefly III. Amount edits preserve
+the journal ID and foreign currency, and reject amounts that round to zero.
+Receipt attachments use the journal ID and Firefly's binary upload endpoint.
+Income confirmations expire after a successful Firefly write even if Telegram
+cannot display the result; retries after a failed request reuse the original date
+for duplicate protection.
+
+### Tests
+
+Run the automated unit tests without requiring live Telegram, MongoDB, Firefly,
+or Groq connections:
+
+```bash
+python -m unittest discover -s tests -v
+```
+
 ## Project Structure
 
-*   `app/fireflybot.py`: Main application entry point and Telegram bot initialization.
+*   `app/__main__.py`: Process entry point (`python -m app`).
+*   `app/fireflybot.py`: Telegram bot initialization.
+*   `app/groq_rate_limit.py`: Persistent request and token budgets for Groq.
 *   `app/plugins/`: Contains modular functionalities (e.g., `transaction_parser.py`, `vendors.py`).
 *   `app/firefly/firefly.py`: Handles all interactions with the Firefly III API.
 *   `app/database/vendorsdb.py`: Manages the local vendor mapping database.

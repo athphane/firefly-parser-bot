@@ -3,10 +3,14 @@
 venv
 config.ini
 *.session
+*.session-*
 *.cache
 *.session-journal
 downloads
 down
-app/**/__pycache__/
+__pycache__/
+*.py[cod]
 .syncedlyrics
 logs/
+workdir/groq-rate-limit.json*
+mongo-backup.*

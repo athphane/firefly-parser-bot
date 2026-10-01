@@ -1,12 +1,20 @@
 services:
   mongodb:
-    image: mongo:latest
+    image: mongo:8.2.7@sha256:7abfba0d07c9330373f8173981ea4d09cd8a82cdf0e86ccaf7008848d1d24f62
     container_name: firefly_parser_bot_mongodb
     environment:
       MONGO_INITDB_ROOT_USERNAME: admin
       MONGO_INITDB_ROOT_PASSWORD: password
       MONGODB_SYSTEM_LOG_VERBOSITY: 0
     restart: always
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "quit(db.adminCommand('ping').ok ? 0 : 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
     networks:
       - firefly-network
 
@@ -16,7 +24,8 @@ services:
       dockerfile: Dockerfile
     container_name: firefly-sms-parser
     depends_on:
-      - mongodb
+      mongodb:
+        condition: service_healthy
     volumes:
       - ./config.ini:/app/config.ini
       - ./workdir:/app/workdir
@@ -32,3 +41,5 @@ networks:
   firefly-network:
     driver: bridge
 
+volumes:
+  mongo-data:
