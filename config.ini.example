@@ -9,14 +9,25 @@ url = firefly_parser_bot_mongodb:27017
 username = admin
 password = password
 db_name=firefly_sms_parser
-auth_source =
+auth_source = admin
 
 [firefly]
 url = https://firefly.your-domain.com
 api_key = your_api_key
 default_account_id = 1
 request_timeout = 30
+error_on_duplicate = true
+
+[exchange_rates]
+local_currency = MVR
+USD = 15.42
+EUR = 16.20
 
 [ai]
 groq_api_key =
 model = qwen/qwen3.8-27b
+requests_per_minute = 30
+tokens_per_minute = 8000
+tokens_per_day = 200000
+# Input tokens per receipt image for qwen/qwen3.8-27b.
+image_tokens = 2048

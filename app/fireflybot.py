@@ -10,15 +10,18 @@ LOGS = logging.getLogger(__name__)
 class FireflyParserBot(Client):
     def __init__(self, version='0.0.0', **kwargs):
         self.version = version
+        app.WORKDIR.mkdir(parents=True, exist_ok=True)
 
         super().__init__(
             'firefly_parser_bot',
             api_id=kwargs['api_id'],
             api_hash=kwargs['api_hash'],
             bot_token=kwargs['bot_token'],
-            workers=16,
+            # Pyrogram's update queue is FIFO. One worker finishes all handlers
+            # for an update before starting the next message or callback.
+            workers=1,
             plugins=dict(root="app/plugins"),
-            workdir="./workdir"
+            workdir=str(app.WORKDIR),
         )
 
     def __str__(self):

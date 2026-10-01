@@ -1,5 +1,5 @@
-pyrotgfork
-tgcrypto
-pymongo
-requests
-groq
+pyrotgfork==2.2.24
+tgcrypto==1.2.5
+pymongo>=4.13,<5
+requests>=2.32,<3
+groq>=0.25,<2
