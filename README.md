@@ -162,6 +162,17 @@ name resolution failures for that old hostname, update the URL and run
 MongoDB data is stored in the Compose `mongo-data` volume. Keep this volume
 across rebuilds; `docker compose down -v` removes it.
 
+MongoDB runs with `--quiet` and disables detailed connection health metric logs
+to suppress routine connection and health-check messages while retaining warnings
+and errors. To apply these settings to an already running
+database without restarting, run:
+
+```bash
+docker compose exec mongodb sh -c 'mongosh --quiet --username "$MONGO_INITDB_ROOT_USERNAME" --password "$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin --eval "db.adminCommand({setParameter: 1, quiet: true, enableDetailedConnectionHealthMetricLogLines: false})"'
+```
+
+The Compose command keeps quiet mode enabled when the database is recreated.
+
 When upgrading an existing installation that used MongoDB's anonymous volume,
 back it up before recreating the database container. Stop the bot, export the
 database, then restore it into the new named volume:

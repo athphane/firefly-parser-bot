@@ -2,10 +2,11 @@ services:
   mongodb:
     image: mongo:8.2.7@sha256:7abfba0d07c9330373f8173981ea4d09cd8a82cdf0e86ccaf7008848d1d24f62
     container_name: firefly-sms-parser-db
+    # Suppress routine connection chatter while retaining warnings and errors.
+    command: ["mongod", "--quiet", "--setParameter", "enableDetailedConnectionHealthMetricLogLines=false"]
     environment:
       MONGO_INITDB_ROOT_USERNAME: admin
       MONGO_INITDB_ROOT_PASSWORD: password
-      MONGODB_SYSTEM_LOG_VERBOSITY: 0
     restart: always
     volumes:
       - mongo-data:/data/db
