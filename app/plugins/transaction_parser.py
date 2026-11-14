@@ -23,6 +23,7 @@ LOGS = logging.getLogger(__name__)
 
 
 async def reply_with_error_file(message: Message, error_message: str):
+    LOGS.error("Transaction processing error for message %s:\n%s", message.id, error_message)
     with BytesIO(error_message.encode("utf-8")) as error_file:
         error_file.name = f"transaction-error-{message.id}.txt"
         await message.reply_document(
@@ -64,7 +65,6 @@ async def incoming_transaction_message(_, message: Message):
         message.text,
     )
     json_decoded = extraction_result.details
-    LOGS.info("Parsed transaction details for text message %s", message.id)
 
     if json_decoded is None:
         await reply_with_error_file(
@@ -76,6 +76,7 @@ async def incoming_transaction_message(_, message: Message):
         )
         return
 
+    LOGS.info("Parsed transaction details for text message %s", message.id)
     parsed_transaction_message = ParsedTransactionMessage(
         date=json_decoded['date'],
         time=json_decoded['time'],
@@ -151,7 +152,6 @@ async def incoming_transfer_receipt(_, message: Message):
             path,
         )
         json_decoded = extraction_result.details
-        LOGS.info("Parsed transaction details for photo message %s", message.id)
 
         if json_decoded is None:
             await reply_with_error_file(
@@ -163,6 +163,7 @@ async def incoming_transfer_receipt(_, message: Message):
             )
             return
 
+        LOGS.info("Parsed transaction details for photo message %s", message.id)
         parsed_transaction_message = ParsedTransactionMessage(
             date=json_decoded['date'],
             time=json_decoded['time'],
