@@ -1,4 +1,4 @@
-"""Serialize Groq calls and retain rolling usage budgets across restarts."""
+"""Bound concurrent Groq calls and retain rolling usage budgets across restarts."""
 
 import json
 import logging
@@ -18,10 +18,12 @@ DAY = 86401.0
 class GroqRateLimiter:
     def __init__(
         self, requests_per_minute, tokens_per_minute, tokens_per_day,
-        state_path, *, clock=time.time, sleep=time.sleep,
+        state_path, *, max_concurrency=1, clock=time.time, sleep=time.sleep,
     ):
         if min(requests_per_minute, tokens_per_minute, tokens_per_day) < 1:
             raise ValueError("Groq rate limits must be positive.")
+        if max_concurrency < 1:
+            raise ValueError("Groq max_concurrency must be positive.")
         self.requests_per_minute = requests_per_minute
         self.tokens_per_minute = tokens_per_minute
         self.tokens_per_day = tokens_per_day
@@ -29,6 +31,9 @@ class GroqRateLimiter:
         self.clock = clock
         self.sleep = sleep
         self.lock = threading.Lock()
+        self.changed = threading.Condition(self.lock)
+        self.slots = threading.BoundedSemaphore(max_concurrency)
+        self.in_flight = set()
         self.entries = []
         self.blocked_until = 0.0
         if self.state_path.exists():
@@ -53,13 +58,21 @@ class GroqRateLimiter:
         self.state_path.parent.mkdir(parents=True, exist_ok=True)
         temporary = self.state_path.with_suffix(".json.tmp")
         temporary.write_text(json.dumps({
-            "entries": self.entries,
+            "entries": self._usage_entries(self.clock()),
             "blocked_until": self.blocked_until,
         }), encoding="utf-8")
         temporary.replace(self.state_path)
 
-    def _token_delay(self, now, window, limit, reservation):
-        entries = [entry for entry in self.entries if entry[0] + window > now]
+    def _usage_entries(self, now):
+        # Pending calls retain their full reservation even when they run longer
+        # than a budget window. Persist them conservatively on every save too.
+        return sorted(
+            [now if id(entry) in self.in_flight else entry[0], entry[1]]
+            for entry in self.entries
+        )
+
+    def _token_delay(self, entries, now, window, limit, reservation):
+        entries = [entry for entry in entries if entry[0] + window > now]
         total = sum(entry[1] for entry in entries) + reservation
         if total <= limit:
             return 0.0
@@ -71,25 +84,42 @@ class GroqRateLimiter:
 
     def _reserve(self, tokens):
         while True:
-            now = self.clock()
-            self.entries = [entry for entry in self.entries if entry[0] + DAY > now]
-            minute_entries = [entry for entry in self.entries if entry[0] + MINUTE > now]
-            request_delay = 0.0
-            if len(minute_entries) >= self.requests_per_minute:
-                request_delay = minute_entries[-self.requests_per_minute][0] + MINUTE - now
-            delay = max(
-                self.blocked_until - now,
-                request_delay,
-                self._token_delay(now, MINUTE, self.tokens_per_minute, tokens),
-                self._token_delay(now, DAY, self.tokens_per_day, tokens),
-            )
-            if delay <= 0:
-                entry = [now, tokens]
-                self.entries.append(entry)
-                # Save before sending so a crash cannot erase a charged call.
-                self._save()
-                return entry
-            LOGS.info("Waiting %.1f seconds for the Groq rate budget", delay)
+            with self.changed:
+                now = self.clock()
+                self.entries = [
+                    entry for entry in self.entries
+                    if id(entry) in self.in_flight or entry[0] + DAY > now
+                ]
+                entries = self._usage_entries(now)
+                minute_entries = [entry for entry in entries if entry[0] + MINUTE > now]
+                request_delay = 0.0
+                if len(minute_entries) >= self.requests_per_minute:
+                    request_delay = minute_entries[-self.requests_per_minute][0] + MINUTE - now
+                delay = max(
+                    self.blocked_until - now,
+                    request_delay,
+                    self._token_delay(entries, now, MINUTE, self.tokens_per_minute, tokens),
+                    self._token_delay(entries, now, DAY, self.tokens_per_day, tokens),
+                )
+                if delay <= 0:
+                    entry = [now, tokens]
+                    self.entries.append(entry)
+                    self.in_flight.add(id(entry))
+                    # Save before sending so a crash cannot erase a charged call.
+                    try:
+                        self._save()
+                    except OSError:
+                        self.in_flight.remove(id(entry))
+                        self.entries = [item for item in self.entries if item is not entry]
+                        self.changed.notify_all()
+                        raise
+                    return entry
+                LOGS.info("Waiting %.1f seconds for the Groq rate budget", delay)
+                if self.in_flight:
+                    # Release the state lock while waiting, and wake promptly
+                    # when a completion releases unused reserved tokens.
+                    self.changed.wait(timeout=delay)
+                    continue
             self.sleep(delay)
 
     def _retry_delay(self, error, attempt):
@@ -106,26 +136,34 @@ class GroqRateLimiter:
         return max(delay, 1.0) + 1.0
 
     def run(self, request, reserved_tokens):
-        """Run one request at a time; retries also consume the shared budget."""
+        """Run within the concurrency cap; retries share all usage budgets."""
         if reserved_tokens < 1 or reserved_tokens > min(self.tokens_per_minute, self.tokens_per_day):
             raise ValueError("This message exceeds the configured Groq token budget for one request.")
-        with self.lock:
+        with self.slots:
             for attempt in range(3):
                 entry = self._reserve(reserved_tokens)
+                actual_tokens = None
                 try:
                     completion = request()
                     actual_tokens = getattr(getattr(completion, "usage", None), "total_tokens", None)
-                    if isinstance(actual_tokens, int) and actual_tokens > 0:
-                        entry[1] = actual_tokens
                     return completion
                 except RateLimitError as error:
                     delay = self._retry_delay(error, attempt)
-                    self.blocked_until = max(self.blocked_until, self.clock() + delay)
+                    with self.changed:
+                        self.blocked_until = max(self.blocked_until, self.clock() + delay)
                     LOGS.warning("Groq rate limited the request; delaying the queue by %.1f seconds", delay)
                     if attempt == 2:
                         raise
                 finally:
                     # Charge unsuccessful/ambiguous calls their full reservation.
                     # Use completion time to avoid expiring a long request early.
-                    entry[0] = self.clock()
-                    self._save()
+                    with self.changed:
+                        if isinstance(actual_tokens, int) and actual_tokens > 0:
+                            entry[1] = actual_tokens
+                        entry[0] = self.clock()
+                        self.in_flight.remove(id(entry))
+                        self.entries.sort(key=lambda item: item[0])
+                        try:
+                            self._save()
+                        finally:
+                            self.changed.notify_all()

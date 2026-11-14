@@ -38,7 +38,7 @@ max_concurrency = 2
 os.environ["FIREFLY_PARSER_CONFIG"] = str(TEST_CONFIG)
 os.environ["FIREFLY_PARSER_WORKDIR"] = str(TEST_ROOT / "workdir")
 os.environ["FIREFLY_PARSER_LOG_DIR"] = str(TEST_ROOT / "logs")
-for name in ('GROQ_API_KEY', 'GROQ_MODEL', 'OPENROUTER_API_KEY', 'OPENROUTER_MODEL'):
+for name in ('GROQ_API_KEY', 'GROQ_MODEL', 'OPENROUTER_API_KEY', 'OPENROUTER_MODEL', 'AI_MAX_CONCURRENCY'):
     os.environ.pop(name, None)
 os.environ['AI_PROVIDER'] = 'groq'
 

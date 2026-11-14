@@ -12,7 +12,7 @@ from groq import RateLimitError
 
 # Reuse the suite's isolated configuration before importing the application.
 from tests import support as test_core
-from app import FireflyParserBot
+from app import AI_MAX_CONCURRENCY, FireflyParserBot
 from app.groq_rate_limit import DAY, MINUTE, GroqRateLimiter
 from app.plugins import transaction_utils
 
@@ -37,9 +37,10 @@ class GroqRateLimitTests(unittest.TestCase):
         self.path = Path(self.runtime.name) / 'usage.json'
         self.clock = FakeClock()
 
-    def limiter(self, rpm=30, tpm=8000, tpd=200000):
+    def limiter(self, rpm=30, tpm=8000, tpd=200000, concurrency=1):
         return GroqRateLimiter(
             rpm, tpm, tpd, self.path,
+            max_concurrency=concurrency,
             clock=self.clock.time, sleep=self.clock.sleep,
         )
 
@@ -47,8 +48,8 @@ class GroqRateLimitTests(unittest.TestCase):
     def completion(tokens):
         return SimpleNamespace(usage=SimpleNamespace(total_tokens=tokens))
 
-    def test_dispatcher_has_one_worker(self):
-        self.assertEqual(FireflyParserBot.workers, 1)
+    def test_dispatcher_uses_configured_concurrency(self):
+        self.assertEqual(FireflyParserBot.workers, AI_MAX_CONCURRENCY)
 
     def test_request_window_waits_before_third_call(self):
         limiter = self.limiter(rpm=2)
@@ -179,6 +180,81 @@ class GroqRateLimitTests(unittest.TestCase):
                 release.set()
             first_result.result(timeout=2)
             second_result.result(timeout=2)
+
+    def test_configured_concurrency_caps_calls_and_handles_out_of_order_completion(self):
+        limiter = self.limiter(concurrency=2)
+        entered = [threading.Event() for _ in range(3)]
+        release = [threading.Event() for _ in range(2)]
+
+        def request(index):
+            entered[index].set()
+            if index < 2 and not release[index].wait(2):
+                raise RuntimeError('Test request was not released')
+            return self.completion(100)
+
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            results = [executor.submit(limiter.run, lambda i=i: request(i), 700) for i in range(2)]
+            try:
+                self.assertTrue(entered[0].wait(2))
+                self.assertTrue(entered[1].wait(2))
+                results.append(executor.submit(limiter.run, lambda: request(2), 700))
+                self.assertFalse(entered[2].wait(0.05))
+                release[1].set()
+                self.assertTrue(entered[2].wait(2))
+            finally:
+                for event in release:
+                    event.set()
+            for result in results:
+                result.result(timeout=2)
+        self.assertEqual([entry[1] for entry in limiter.entries], [100, 100, 100])
+        self.assertEqual(json.loads(self.path.read_text())['entries'], limiter.entries)
+        self.assertFalse(limiter.in_flight)
+
+    def test_pending_reservations_do_not_expire_and_completion_wakes_waiters(self):
+        limiter = self.limiter(tpm=1000, concurrency=2)
+        first_entered = threading.Event()
+        second_entered = threading.Event()
+        waiting = threading.Event()
+        release = threading.Event()
+        real_wait = limiter.changed.wait
+
+        def wait(timeout):
+            waiting.set()
+            return real_wait(timeout)
+
+        def first():
+            first_entered.set()
+            if not release.wait(2):
+                raise RuntimeError('Test request was not released')
+            return self.completion(100)
+
+        def second():
+            second_entered.set()
+            return self.completion(100)
+
+        with patch.object(limiter.changed, 'wait', side_effect=wait), ThreadPoolExecutor(max_workers=2) as executor:
+            first_result = executor.submit(limiter.run, first, 700)
+            try:
+                self.assertTrue(first_entered.wait(2))
+                self.clock.now += DAY + 1
+                second_result = executor.submit(limiter.run, second, 700)
+                self.assertTrue(waiting.wait(2))
+                self.assertFalse(second_entered.is_set())
+            finally:
+                release.set()
+            first_result.result(timeout=2)
+            second_result.result(timeout=2)
+        self.assertTrue(second_entered.is_set())
+        self.assertEqual(self.clock.waits, [])
+
+    def test_reservation_save_failure_releases_concurrency_slot(self):
+        limiter = self.limiter(concurrency=2)
+        with patch.object(limiter, '_save', side_effect=OSError('Disk full')):
+            with self.assertRaises(OSError):
+                limiter.run(lambda: self.fail('Must not send'), 700)
+        self.assertFalse(limiter.in_flight)
+        self.assertEqual(limiter.entries, [])
+        limiter.run(lambda: self.completion(100), 700)
 
     def test_text_and_image_extraction_share_limiter_without_sdk_retries(self):
         with patch.object(transaction_utils, 'Groq') as client_type, patch.object(

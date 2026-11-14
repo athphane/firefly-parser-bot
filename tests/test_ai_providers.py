@@ -2,6 +2,8 @@
 
 import base64
 import json
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from decimal import Decimal
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -98,6 +100,41 @@ class OpenRouterTests(unittest.TestCase):
             result = transaction_utils.extract_transaction_details_from_text('Bank alert')
         self.assertIsNone(result.error)
         self.assertEqual(len(requests), 2)
+
+    def test_text_and_receipts_share_configured_concurrency_slots(self):
+        entered = [threading.Event() for _ in range(3)]
+        release = threading.Event()
+        lock = threading.Lock()
+        calls = []
+
+        def handler(request):
+            with lock:
+                index = len(calls)
+                calls.append(request)
+            entered[index].set()
+            if not release.wait(2):
+                raise RuntimeError('Test request was not released')
+            return self.response()
+
+        with self.client(handler), patch.object(
+            transaction_utils, 'AI_CALL_SLOTS', threading.BoundedSemaphore(2)
+        ), TemporaryDirectory() as directory, ThreadPoolExecutor(max_workers=3) as executor:
+            image = Path(directory) / 'receipt.jpg'
+            image.write_bytes(b'receipt')
+            futures = [
+                executor.submit(transaction_utils.extract_transaction_details_from_text, 'First alert'),
+                executor.submit(transaction_utils.extract_transaction_details_from_image, str(image)),
+            ]
+            try:
+                self.assertTrue(entered[0].wait(2))
+                self.assertTrue(entered[1].wait(2))
+                futures.append(executor.submit(transaction_utils.extract_transaction_details_from_text, 'Third alert'))
+                self.assertFalse(entered[2].wait(0.05))
+            finally:
+                release.set()
+            for future in futures:
+                self.assertIsNone(future.result(timeout=2).error)
+        self.assertEqual(len(calls), 3)
 
     def test_api_errors_become_extraction_errors_for_text_and_receipts(self):
         def handler(request):

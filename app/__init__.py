@@ -119,6 +119,16 @@ if AI_PROVIDER not in ('groq', 'openrouter'):
     raise RuntimeError("AI_PROVIDER must be either 'groq' or 'openrouter'.")
 AI_PROVIDER_NAME = {'groq': 'Groq', 'openrouter': 'OpenRouter'}[AI_PROVIDER]
 
+try:
+    AI_MAX_CONCURRENCY = int(os.environ.get(
+        'AI_MAX_CONCURRENCY',
+        config.get('ai', 'max_concurrency', fallback='1' if AI_PROVIDER == 'groq' else '4'),
+    ))
+except ValueError as error:
+    raise RuntimeError("AI_MAX_CONCURRENCY (or ai.max_concurrency) must be an integer.") from error
+if AI_MAX_CONCURRENCY < 1:
+    raise RuntimeError("AI_MAX_CONCURRENCY (or ai.max_concurrency) must be at least 1.")
+
 # Environment variables override config.ini, including explicitly blank values.
 GROQ_API_KEY = os.environ.get('GROQ_API_KEY', config.get('ai', 'groq_api_key', fallback='')).strip()
 GROQ_MODEL = os.environ.get('GROQ_MODEL', config.get('ai', 'model', fallback='qwen/qwen3.8-27b')).strip()

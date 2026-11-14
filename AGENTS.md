@@ -16,7 +16,7 @@
 
 ## Real entrypoints and structure
 - Process entrypoint is `app/__main__.py` -> `FireflyParserBot.run()`.
-- Bot client is configured in `app/fireflybot.py` with Pyrogram plugin autoload from `app/plugins`, a configured session directory, and one dispatcher worker.
+- Bot client is configured in `app/fireflybot.py` with Pyrogram plugin autoload from `app/plugins`, a configured session directory, and `AI_MAX_CONCURRENCY` dispatcher workers (defaults: Groq 1, OpenRouter 4; `[ai] max_concurrency` fallback).
 - Transaction creation/parsing flow is centered in:
   - `app/plugins/transaction_parser.py` (Telegram handlers)
   - `app/plugins/transaction_utils.py` (LLM extraction helpers)

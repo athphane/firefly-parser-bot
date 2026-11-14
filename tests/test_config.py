@@ -20,7 +20,7 @@ class ConfigurationTests(unittest.TestCase):
                                FIREFLY_PARSER_WORKDIR=str(root / 'sessions'),
                                FIREFLY_PARSER_LOG_DIR=str(root / 'logs'))
             for name in ('AI_PROVIDER', 'GROQ_API_KEY', 'GROQ_MODEL',
-                         'OPENROUTER_API_KEY', 'OPENROUTER_MODEL'):
+                         'OPENROUTER_API_KEY', 'OPENROUTER_MODEL', 'AI_MAX_CONCURRENCY'):
                 environment.pop(name, None)
             environment.update(ai_environment or {})
             if groq_state is not None:
@@ -98,6 +98,38 @@ class ConfigurationTests(unittest.TestCase):
                     code=f"from app import OPENROUTER_API_KEY, OPENROUTER_MODEL; assert (OPENROUTER_API_KEY, OPENROUTER_MODEL) == {expected!r}",
                 )
                 self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_concurrency_defaults_config_and_environment(self):
+        config = TEST_CONFIG.read_text().replace('max_concurrency = 2\n', '')
+        for provider, default in (('groq', 1), ('openrouter', 4)):
+            environment = {'AI_PROVIDER': provider, 'OPENROUTER_API_KEY': 'key',
+                           'OPENROUTER_MODEL': 'vendor/model'}
+            for settings, overrides, expected in (
+                (config, {}, default),
+                (config + 'max_concurrency = 3\n', {}, 3),
+                (config + 'max_concurrency = invalid\n', {'AI_MAX_CONCURRENCY': '6'}, 6),
+            ):
+                with self.subTest(provider=provider, expected=expected):
+                    result = self.launch(
+                        settings, ai_environment={**environment, **overrides},
+                        code=(
+                            'from app import AI_MAX_CONCURRENCY, FireflyParserBot; '
+                            f'assert AI_MAX_CONCURRENCY == FireflyParserBot.workers == {expected}'
+                        ),
+                    )
+                    self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_invalid_concurrency_fails_clearly(self):
+        for value in ('0', '-1', '', '1.5', 'invalid'):
+            for source in ('config', 'env'):
+                with self.subTest(value=value, source=source):
+                    config = TEST_CONFIG.read_text().replace('max_concurrency = 2', f'max_concurrency = {value}')
+                    result = self.launch(
+                        config if source == 'config' else TEST_CONFIG.read_text(),
+                        ai_environment={'AI_MAX_CONCURRENCY': value} if source == 'env' else {},
+                    )
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn('AI_MAX_CONCURRENCY', result.stderr)
 
     def test_invalid_provider_and_missing_active_settings_fail_clearly(self):
         for environment, expected in (

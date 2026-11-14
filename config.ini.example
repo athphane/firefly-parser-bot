@@ -26,6 +26,9 @@ EUR = 16.20
 
 [ai]
 # AI_PROVIDER=groq (default) or AI_PROVIDER=openrouter selects the backend.
+# Simultaneous AI calls and Telegram update workers. Restart after changing.
+# Defaults: Groq = 1, OpenRouter = 4. AI_MAX_CONCURRENCY overrides this setting.
+# max_concurrency = 4
 # GROQ_API_KEY and GROQ_MODEL override these Groq settings.
 groq_api_key =
 model = qwen/qwen3.8-27b

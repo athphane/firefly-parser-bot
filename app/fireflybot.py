@@ -17,9 +17,9 @@ class FireflyParserBot(Client):
             api_id=kwargs['api_id'],
             api_hash=kwargs['api_hash'],
             bot_token=kwargs['bot_token'],
-            # Pyrogram's update queue is FIFO. One worker finishes all handlers
-            # for an update before starting the next message or callback.
-            workers=1,
+            # Each worker awaits extraction, so allow enough updates in flight
+            # to use the configured AI concurrency.
+            workers=app.AI_MAX_CONCURRENCY,
             plugins=dict(root="app/plugins"),
             workdir=str(app.WORKDIR),
         )

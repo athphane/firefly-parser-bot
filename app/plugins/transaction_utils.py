@@ -2,6 +2,7 @@ import json
 import base64
 import logging
 import mimetypes
+import threading
 from decimal import Decimal, InvalidOperation
 from dataclasses import dataclass
 from typing import Optional
@@ -12,7 +13,7 @@ from groq.types.chat import ChatCompletionSystemMessageParam, ChatCompletionUser
 from groq.types.chat.completion_create_params import ResponseFormatResponseFormatJsonObject
 from openai import APIError as OpenRouterAPIError, OpenAI
 from app import (
-    AI_PROVIDER, AI_PROVIDER_NAME, OPENROUTER_API_KEY, OPENROUTER_MODEL,
+    AI_PROVIDER, AI_PROVIDER_NAME, AI_MAX_CONCURRENCY, OPENROUTER_API_KEY, OPENROUTER_MODEL,
     GROQ_API_KEY, GROQ_MODEL, GROQ_REQUESTS_PER_MINUTE,
     GROQ_TOKENS_PER_MINUTE, GROQ_TOKENS_PER_DAY, GROQ_IMAGE_TOKENS, WORKDIR,
 )
@@ -21,13 +22,20 @@ from app.groq_rate_limit import GroqRateLimiter
 LOGS = logging.getLogger(__name__)
 GROQ_MAX_COMPLETION_TOKENS = 2048
 OPENROUTER_MAX_COMPLETION_TOKENS = 2048
+AI_CALL_SLOTS = threading.BoundedSemaphore(AI_MAX_CONCURRENCY)
 GROQ_RATE_LIMITER = GroqRateLimiter(
     GROQ_REQUESTS_PER_MINUTE, GROQ_TOKENS_PER_MINUTE, GROQ_TOKENS_PER_DAY,
     WORKDIR / "groq-rate-limit.json",
+    max_concurrency=AI_MAX_CONCURRENCY,
 ) if AI_PROVIDER == 'groq' else None
 
 
 def create_completion(messages):
+    with AI_CALL_SLOTS:
+        return _create_completion(messages)
+
+
+def _create_completion(messages):
     if AI_PROVIDER == 'openrouter':
         # OpenRouter uses its own limits; do not reserve Groq's local budget.
         # The SDK retries transient errors, including 429s, twice.

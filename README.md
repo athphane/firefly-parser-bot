@@ -71,13 +71,19 @@ To get the Firefly Parser Bot up and running, follow these steps:
     Set `FIREFLY_PARSER_CONFIG`, `FIREFLY_PARSER_WORKDIR`, or
     `FIREFLY_PARSER_LOG_DIR` to override those locations.
 
-    Incoming messages and callbacks are processed one at a time in Telegram
-    update order. When using Groq, text and receipt extraction share a limiter. Before each
+    AI concurrency is configurable with `AI_MAX_CONCURRENCY` or `[ai] max_concurrency`.
+    Without an explicit setting, Groq defaults to one call and OpenRouter to four.
+    The same setting controls Telegram update workers, so multiple messages can
+    make progress together. With values above one, replies and transaction
+    creation can finish out of order. Set it to `1` for sequential processing.
+    Text and receipt extraction share the concurrency cap.
+
+    When using Groq, text and receipt extraction also share a rate limiter. Before each
     attempt it reserves a conservative input estimate plus the maximum output,
     then replaces that reservation with the completion's reported token usage.
     Calls wait until both the minute and daily budgets have room. Daily usage
-    uses a rolling 24-hour window; reaching that budget can delay the entire
-    queue until earlier usage expires. Oversized messages are rejected without
+    uses a rolling 24-hour window; reaching that budget can delay queued
+    Groq calls until earlier usage expires. Oversized messages are rejected without
     calling Groq. Waits are recorded in the application log.
 
     Usage and cooldowns are saved in `workdir/groq-rate-limit.json`, so keep
@@ -86,8 +92,9 @@ To get the Firefly Parser Bot up and running, follow these steps:
     shared limits. On a 429 response, the bot honors `Retry-After` and retries
     through the limiter, up to three total attempts
     ([Groq rate limit documentation](https://console.groq.com/docs/rate-limits)).
-    Existing configurations receive the default limits automatically;
-    the former `max_concurrency` setting is no longer used.
+    Existing configurations receive the default rate budgets automatically.
+    The `max_concurrency` setting is supported again; raising it still respects
+    Groq's request and token budgets.
 
 ### AI provider selection
 
@@ -99,6 +106,7 @@ model. Other bot settings still come from `config.ini`.
 | Environment variable | Config fallback | Purpose |
 | --- | --- | --- |
 | `AI_PROVIDER` | Defaults to `groq` | Select `groq` or `openrouter` |
+| `AI_MAX_CONCURRENCY` | `[ai] max_concurrency` | Positive integer; defaults to `1` for Groq, `4` for OpenRouter |
 | `GROQ_API_KEY` | `[ai] groq_api_key` | Groq API key |
 | `GROQ_MODEL` | `[ai] model` | Groq model; defaults to `qwen/qwen3.8-27b` |
 | `OPENROUTER_API_KEY` | `[ai] openrouter_api_key` | OpenRouter API key |
@@ -109,8 +117,12 @@ For example, after setting `OPENROUTER_API_KEY` securely in your environment:
 ```bash
 export AI_PROVIDER=openrouter
 export OPENROUTER_MODEL=openai/gpt-4o-mini
+export AI_MAX_CONCURRENCY=8
 python -m app
 ```
+
+Restart the bot after changing concurrency. Omit `AI_MAX_CONCURRENCY` to use the
+config value or the provider default.
 
 Choose an OpenRouter model that supports JSON output and, for receipt extraction,
 image input. The same model handles text and receipts. OpenRouter requests use

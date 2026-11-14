@@ -33,6 +33,7 @@ services:
       GROQ_MODEL:
       OPENROUTER_API_KEY:
       OPENROUTER_MODEL:
+      AI_MAX_CONCURRENCY:
     depends_on:
       mongodb:
         condition: service_healthy
