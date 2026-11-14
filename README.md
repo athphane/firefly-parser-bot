@@ -30,7 +30,7 @@ To get the Firefly Parser Bot up and running, follow these steps:
 *   A Telegram Bot Token (obtainable from BotFather on Telegram).
 *   Python 3.12 or higher.
 *   MongoDB (included when using Docker Compose).
-*   A Groq API key.
+*   A Groq or OpenRouter API key.
 
 ### Installation Steps
 
@@ -58,7 +58,7 @@ To get the Firefly Parser Bot up and running, follow these steps:
     *   `[mongo]`: Configure the MongoDB connection and optional authentication source.
     *   `[firefly]`: Provide your Firefly III URL, API key, default account, and request timeout.
     *   `[exchange_rates]`: Configure the local currency and local-currency value of each supported foreign currency. Unknown currencies are rejected instead of being recorded at a false 1:1 rate.
-    *   `[ai]`: Add your Groq API key and select the Groq model. Rate limits default to `requests_per_minute = 30`, `tokens_per_minute = 8000`, and `tokens_per_day = 200000`. Set `image_tokens` for your model's receipt image cost; the default is `2048` for `qwen/qwen3.8-27b` ([Groq vision documentation](https://console.groq.com/docs/vision)).
+    *   `[ai]`: Configure the selected AI provider as described below. Existing Groq configurations continue to work.
 
 4.  **Run the Bot:**
     ```bash
@@ -72,7 +72,7 @@ To get the Firefly Parser Bot up and running, follow these steps:
     `FIREFLY_PARSER_LOG_DIR` to override those locations.
 
     Incoming messages and callbacks are processed one at a time in Telegram
-    update order. Text and receipt extraction share a Groq limiter. Before each
+    update order. When using Groq, text and receipt extraction share a limiter. Before each
     attempt it reserves a conservative input estimate plus the maximum output,
     then replaces that reservation with the completion's reported token usage.
     Calls wait until both the minute and daily budgets have room. Daily usage
@@ -88,6 +88,55 @@ To get the Firefly Parser Bot up and running, follow these steps:
     ([Groq rate limit documentation](https://console.groq.com/docs/rate-limits)).
     Existing configurations receive the default limits automatically;
     the former `max_concurrency` setting is no longer used.
+
+### AI provider selection
+
+Set `AI_PROVIDER` to `groq` or `openrouter` in the process environment and restart
+the bot to switch providers. It defaults to `groq`. Environment variables take
+precedence over `config.ini`; only the selected provider needs credentials and a
+model. Other bot settings still come from `config.ini`.
+
+| Environment variable | Config fallback | Purpose |
+| --- | --- | --- |
+| `AI_PROVIDER` | Defaults to `groq` | Select `groq` or `openrouter` |
+| `GROQ_API_KEY` | `[ai] groq_api_key` | Groq API key |
+| `GROQ_MODEL` | `[ai] model` | Groq model; defaults to `qwen/qwen3.8-27b` |
+| `OPENROUTER_API_KEY` | `[ai] openrouter_api_key` | OpenRouter API key |
+| `OPENROUTER_MODEL` | `[ai] openrouter_model` | Required OpenRouter model ID, including its provider prefix |
+
+For example, after setting `OPENROUTER_API_KEY` securely in your environment:
+
+```bash
+export AI_PROVIDER=openrouter
+export OPENROUTER_MODEL=openai/gpt-4o-mini
+python -m app
+```
+
+Choose an OpenRouter model that supports JSON output and, for receipt extraction,
+image input. The same model handles text and receipts. OpenRouter requests use
+its [OpenAI-compatible API](https://openrouter.ai/docs/guides/community/openai-sdk)
+and require a provider endpoint supporting the requested parameters. Each attempt
+has a 60-second timeout, with up to two SDK retries for temporary failures,
+including rate limits. No Groq request/token budgets or usage files are used for
+OpenRouter. OpenRouter and upstream provider limits, credits, and billing still
+apply; linking a Groq key through OpenRouter does not remove that key's limits.
+
+For Groq, set `AI_PROVIDER=groq` and optionally `GROQ_API_KEY` and `GROQ_MODEL`.
+Its `[ai]` rate limits default to `requests_per_minute = 30`,
+`tokens_per_minute = 8000`, and `tokens_per_day = 200000`. Set `image_tokens`
+for your model's receipt image cost; the default is `2048` for
+`qwen/qwen3.8-27b` ([Groq vision documentation](https://console.groq.com/docs/vision)).
+
+Docker Compose passes the same environment variables to the app container.
+Export them before starting or recreating it:
+
+```bash
+docker compose up -d --build app
+```
+
+Recreate the container after changing environment variables; `docker compose restart`
+does not update the container environment. Credentials and model IDs can also be
+kept in `config.ini`, with only `AI_PROVIDER` set in the environment.
 
 ### Docker runtime permissions
 
@@ -142,7 +191,7 @@ for duplicate protection.
 ### Tests
 
 Run the automated unit tests without requiring live Telegram, MongoDB, Firefly,
-or Groq connections:
+or AI provider connections:
 
 ```bash
 python -m unittest discover -s tests -v

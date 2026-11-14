@@ -10,7 +10,9 @@ from groq import APIError, Groq
 from groq.types.chat.chat_completion_content_part_image_param import ChatCompletionContentPartImageParam, ImageURL
 from groq.types.chat import ChatCompletionSystemMessageParam, ChatCompletionUserMessageParam, ChatCompletionContentPartTextParam
 from groq.types.chat.completion_create_params import ResponseFormatResponseFormatJsonObject
+from openai import APIError as OpenRouterAPIError, OpenAI
 from app import (
+    AI_PROVIDER, AI_PROVIDER_NAME, OPENROUTER_API_KEY, OPENROUTER_MODEL,
     GROQ_API_KEY, GROQ_MODEL, GROQ_REQUESTS_PER_MINUTE,
     GROQ_TOKENS_PER_MINUTE, GROQ_TOKENS_PER_DAY, GROQ_IMAGE_TOKENS, WORKDIR,
 )
@@ -18,13 +20,32 @@ from app.groq_rate_limit import GroqRateLimiter
 
 LOGS = logging.getLogger(__name__)
 GROQ_MAX_COMPLETION_TOKENS = 2048
+OPENROUTER_MAX_COMPLETION_TOKENS = 2048
 GROQ_RATE_LIMITER = GroqRateLimiter(
     GROQ_REQUESTS_PER_MINUTE, GROQ_TOKENS_PER_MINUTE, GROQ_TOKENS_PER_DAY,
     WORKDIR / "groq-rate-limit.json",
-)
+) if AI_PROVIDER == 'groq' else None
 
 
 def create_completion(messages):
+    if AI_PROVIDER == 'openrouter':
+        # OpenRouter uses its own limits; do not reserve Groq's local budget.
+        # The SDK retries transient errors, including 429s, twice.
+        with OpenAI(
+            api_key=OPENROUTER_API_KEY,
+            base_url='https://openrouter.ai/api/v1',
+            timeout=60.0,
+            max_retries=2,
+        ) as client:
+            return client.chat.completions.create(
+                model=OPENROUTER_MODEL,
+                messages=messages,
+                max_tokens=OPENROUTER_MAX_COMPLETION_TOKENS,
+                stream=False,
+                response_format={'type': 'json_object'},
+                extra_body={'provider': {'require_parameters': True}},
+            )
+
     # UTF-8 byte length is a conservative text token estimate. Include chat
     # framing, image tokens and the maximum output before admitting a request.
     prompt_tokens = 32
@@ -83,7 +104,7 @@ def encode_image(image_path: str) -> str:
 
 
 def parse_completion(completion, required_keys: tuple[str, ...]) -> TransactionExtractionResult:
-    """Validate and decode the structured content returned by Groq."""
+    """Validate and decode structured content from either AI provider."""
     completion_data = serialize_completion(completion)
 
     try:
@@ -158,12 +179,12 @@ def extract_transaction_details_from_image(path: str) -> TransactionExtractionRe
                 ChatCompletionContentPartImageParam(type='image_url', image_url=ImageURL(detail='high', url=image_for_ai))
             ]),
         ])
-    except (APIError, ValueError, OSError) as error:
-        LOGS.warning("Groq could not generate valid JSON for receipt extraction: %s", error)
+    except (APIError, OpenRouterAPIError, ValueError, OSError) as error:
+        LOGS.warning("%s could not generate valid JSON for receipt extraction: %s", AI_PROVIDER_NAME, error)
         return TransactionExtractionResult(
             details=None,
             completion_data=None,
-            error=f"Groq API error: {error}"
+            error=f"{AI_PROVIDER_NAME} API error: {error}"
         )
 
     required_keys = (
@@ -175,8 +196,8 @@ def extract_transaction_details_from_image(path: str) -> TransactionExtractionRe
 
 def extract_transaction_details_from_text(text: str) -> TransactionExtractionResult:
     """
-    Uses Groq AI to extract transaction details from the given text.
-    Returns parsed details together with the serialized Groq completion and any
+    Uses the selected AI provider to extract transaction details from text.
+    Returns parsed details together with the serialized completion and any
     extraction error.
     """
     try:
@@ -184,12 +205,12 @@ def extract_transaction_details_from_text(text: str) -> TransactionExtractionRes
             ChatCompletionSystemMessageParam(role='system', content=get_system_message_for_text()),
             ChatCompletionUserMessageParam(role='user', content=text),
         ])
-    except (APIError, ValueError, OSError) as error:
-        LOGS.warning("Groq could not generate valid JSON for transaction extraction: %s", error)
+    except (APIError, OpenRouterAPIError, ValueError, OSError) as error:
+        LOGS.warning("%s could not generate valid JSON for transaction extraction: %s", AI_PROVIDER_NAME, error)
         return TransactionExtractionResult(
             details=None,
             completion_data=None,
-            error=f"Groq API error: {error}"
+            error=f"{AI_PROVIDER_NAME} API error: {error}"
         )
 
     # Card and approval code are genuinely optional; many alerts omit them.

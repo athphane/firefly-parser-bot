@@ -8,7 +8,7 @@ import os
 
 from pyrogram.enums import ChatAction
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
-from app import FireflyParserBot, TELEGRAM_ADMINS
+from app import AI_PROVIDER_NAME, FireflyParserBot, TELEGRAM_ADMINS
 from app.models.parsed_transaction_message import ParsedTransactionMessage
 
 from app.plugins.transaction_customization import TRANSACTION_ID_PREFIX, discard_user_contexts
@@ -37,11 +37,11 @@ def build_error_report(
     error_message: str,
     extraction_result: TransactionExtractionResult
 ) -> str:
-    completion_data = extraction_result.completion_data or "No completion was returned by Groq."
+    completion_data = extraction_result.completion_data or f"No completion was returned by {AI_PROVIDER_NAME}."
     sections = [error_message]
     if extraction_result.error:
         sections.append(f"Extraction error:\n{extraction_result.error}")
-    sections.append(f"Groq completion data:\n{completion_data}")
+    sections.append(f"{AI_PROVIDER_NAME} completion data:\n{completion_data}")
     return "\n\n".join(sections)
 
 

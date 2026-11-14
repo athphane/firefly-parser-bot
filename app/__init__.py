@@ -114,22 +114,49 @@ if config.has_section('exchange_rates'):
             raise RuntimeError("The exchange rate for the local currency must be 1.")
         EXCHANGE_RATES[currency] = rate
 
-GROQ_API_KEY = config.get('ai', 'groq_api_key')
-GROQ_MODEL = config.get('ai', 'model', fallback='qwen/qwen3.8-27b').strip()
-if not GROQ_MODEL:
-    raise RuntimeError("ai.model must not be blank.")
-GROQ_REQUESTS_PER_MINUTE = config.getint('ai', 'requests_per_minute', fallback=30)
-GROQ_TOKENS_PER_MINUTE = config.getint('ai', 'tokens_per_minute', fallback=8000)
-GROQ_TOKENS_PER_DAY = config.getint('ai', 'tokens_per_day', fallback=200000)
-GROQ_IMAGE_TOKENS = config.getint('ai', 'image_tokens', fallback=2048)
-for setting, value in (
-    ('requests_per_minute', GROQ_REQUESTS_PER_MINUTE),
-    ('tokens_per_minute', GROQ_TOKENS_PER_MINUTE),
-    ('tokens_per_day', GROQ_TOKENS_PER_DAY),
-    ('image_tokens', GROQ_IMAGE_TOKENS),
-):
+AI_PROVIDER = os.environ.get('AI_PROVIDER', 'groq').strip().lower()
+if AI_PROVIDER not in ('groq', 'openrouter'):
+    raise RuntimeError("AI_PROVIDER must be either 'groq' or 'openrouter'.")
+AI_PROVIDER_NAME = {'groq': 'Groq', 'openrouter': 'OpenRouter'}[AI_PROVIDER]
+
+# Environment variables override config.ini, including explicitly blank values.
+GROQ_API_KEY = os.environ.get('GROQ_API_KEY', config.get('ai', 'groq_api_key', fallback='')).strip()
+GROQ_MODEL = os.environ.get('GROQ_MODEL', config.get('ai', 'model', fallback='qwen/qwen3.8-27b')).strip()
+OPENROUTER_API_KEY = os.environ.get(
+    'OPENROUTER_API_KEY', config.get('ai', 'openrouter_api_key', fallback='')
+).strip()
+OPENROUTER_MODEL = os.environ.get(
+    'OPENROUTER_MODEL', config.get('ai', 'openrouter_model', fallback='')
+).strip()
+if AI_PROVIDER == 'groq':
+    if not GROQ_API_KEY:
+        raise RuntimeError("GROQ_API_KEY (or ai.groq_api_key) must not be blank when AI_PROVIDER=groq.")
+    if not GROQ_MODEL:
+        raise RuntimeError("GROQ_MODEL (or ai.model) must not be blank when AI_PROVIDER=groq.")
+else:
+    if not OPENROUTER_API_KEY:
+        raise RuntimeError("OPENROUTER_API_KEY (or ai.openrouter_api_key) must not be blank when AI_PROVIDER=openrouter.")
+    if not OPENROUTER_MODEL:
+        raise RuntimeError("OPENROUTER_MODEL (or ai.openrouter_model) must not be blank when AI_PROVIDER=openrouter.")
+
+
+def _groq_limit(setting, default):
+    # Inactive Groq settings must not prevent OpenRouter from starting.
+    if AI_PROVIDER != 'groq':
+        return default
+    try:
+        value = config.getint('ai', setting, fallback=default)
+    except ValueError as error:
+        raise RuntimeError(f"ai.{setting} must be an integer.") from error
     if value < 1:
         raise RuntimeError(f"ai.{setting} must be at least 1.")
+    return value
+
+
+GROQ_REQUESTS_PER_MINUTE = _groq_limit('requests_per_minute', 30)
+GROQ_TOKENS_PER_MINUTE = _groq_limit('tokens_per_minute', 8000)
+GROQ_TOKENS_PER_DAY = _groq_limit('tokens_per_day', 200000)
+GROQ_IMAGE_TOKENS = _groq_limit('image_tokens', 2048)
 
 # Import after configuration is loaded. FireflyParserBotClient imports `app`
 # for runtime settings, so importing it above would create a circular import.

@@ -26,6 +26,13 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: firefly-sms-parser-bot
+    environment:
+      AI_PROVIDER: ${AI_PROVIDER:-groq}
+      # Pass these through when set; otherwise use config.ini values.
+      GROQ_API_KEY:
+      GROQ_MODEL:
+      OPENROUTER_API_KEY:
+      OPENROUTER_MODEL:
     depends_on:
       mongodb:
         condition: service_healthy

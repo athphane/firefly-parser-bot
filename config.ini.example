@@ -25,8 +25,15 @@ USD = 15.42
 EUR = 16.20
 
 [ai]
+# AI_PROVIDER=groq (default) or AI_PROVIDER=openrouter selects the backend.
+# GROQ_API_KEY and GROQ_MODEL override these Groq settings.
 groq_api_key =
 model = qwen/qwen3.8-27b
+# OPENROUTER_API_KEY and OPENROUTER_MODEL override these OpenRouter settings.
+# Use an OpenRouter model ID supporting JSON output and images for receipts.
+openrouter_api_key =
+openrouter_model =
+# These budgets only apply when AI_PROVIDER=groq.
 requests_per_minute = 30
 tokens_per_minute = 8000
 tokens_per_day = 200000

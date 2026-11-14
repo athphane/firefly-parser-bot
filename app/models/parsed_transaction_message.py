@@ -5,6 +5,7 @@ import logging
 import os
 
 from app import (
+    AI_PROVIDER,
     EXCHANGE_RATES,
     FIREFLY_DEFAULT_ACCOUNT_ID,
     FIREFLY_ERROR_ON_DUPLICATE,
@@ -173,7 +174,7 @@ class ParsedTransactionMessage:
             except Exception as error:
                 LOGS.warning("Failed to infer transaction defaults: %s", error)
         # Only use system tags
-        tags = ['powered-by-groq']
+        tags = [f'powered-by-{AI_PROVIDER}']
         if is_receipt:
             tags += ['from-receipt', 'ocr']
         transaction_data = {
