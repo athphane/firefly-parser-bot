@@ -5,7 +5,8 @@ bot_token =
 admins =
 
 [mongo]
-url = firefly_parser_bot_mongodb:27017
+# Use the Compose service name so container renames do not break DNS.
+url = mongodb:27017
 username = admin
 password = password
 db_name=firefly_sms_parser

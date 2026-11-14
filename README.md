@@ -91,6 +91,13 @@ To get the Firefly Parser Bot up and running, follow these steps:
 
 ### Docker runtime permissions
 
+For the bundled Compose stack, set `[mongo]` `url = mongodb:27017` and
+`auth_source = admin` in `config.ini`. The `mongodb` service name stays the
+same when the container is renamed. The network also retains the legacy
+`firefly_parser_bot_mongodb` alias for existing configurations. If logs report
+name resolution failures for that old hostname, update the URL and run
+`docker compose restart app` to reload the configuration.
+
 MongoDB data is stored in the Compose `mongo-data` volume. Keep this volume
 across rebuilds; `docker compose down -v` removes it.
 
